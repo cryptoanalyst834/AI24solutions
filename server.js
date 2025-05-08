@@ -21,7 +21,7 @@ bot.start((ctx) => {
 
 app.post('/send-results', async (req, res) => {
   const { name, email, answers } = req.body;
-  const message = `📥 Новый квиз:\n👤 Имя: ${name}\n📧 Email: ${email}\n🧠 Ответы:\n${answers.join('\n')}`;
+  const message = `📥 Новый квиз:\n👤 Имя: ${name}\n💬 Telegram: ${email}\n🧠 Ответы:\n${answers.join('\n')}`;
   try {
     await bot.telegram.sendMessage(process.env.ADMIN_ID, message);
     res.status(200).send('OK');
