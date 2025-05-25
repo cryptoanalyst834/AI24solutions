@@ -1,4 +1,4 @@
-// AI24Solutions Telegram-бот с меню режимов: Квиз / Ассистент / AI-вопросы
+// AI24Solutions Telegram-бот с меню режимов и Express-сервером
 const express = require('express');
 const bodyParser = require('body-parser');
 const { Telegraf, Markup } = require('telegraf');
@@ -117,5 +117,15 @@ bot.on('text', async (ctx) => {
   ctx.reply(answer);
 });
 
+// Простой HTTP-сервер для Render
+app.get('/', (_, res) => {
+  res.send('AI24Solutions bot is live ✅');
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`✅ Сервер слушает порт ${PORT}`);
+});
+
 bot.launch();
-console.log('✅ AI24Solutions бот запущен с меню и режимами');
+console.log('✅ AI24Solutions бот запущен');
