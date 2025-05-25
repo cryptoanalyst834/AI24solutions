@@ -9,11 +9,10 @@ const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
-// === Инициализация Telegram-бота и OpenAI ===
 const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// === Команда /start с персонализацией ===
+// === Персонализация /start ===
 bot.start((ctx) => {
   const name = ctx.from.first_name || 'друг';
   ctx.reply(`Привет, ${name}! 👋\nНажми кнопку ниже, чтобы пройти квиз и получить стратегию развития с ИИ.`, {
@@ -24,30 +23,45 @@ bot.start((ctx) => {
   });
 });
 
-// === Команда /ai для активации AI-помощника ===
+// === Простая FSM для режима AI-вопроса ===
+const awaitingAIQuestion = new Set();
+
 bot.command('ai', (ctx) => {
+  awaitingAIQuestion.add(ctx.from.id);
   ctx.reply('Введите ваш вопрос по AI, и я постараюсь ответить 🙂');
-
-  // ⛔ ВАЖНО: избегаем множественного назначения обработчика
-  const handler = async (ctx2) => {
-    try {
-      const completion = await openai.chat.completions.create({
-        messages: [{ role: "user", content: ctx2.message.text }],
-        model: "gpt-4o", // или "gpt-3.5-turbo" для экономии
-      });
-
-      const reply = completion.choices[0]?.message?.content || "Извините, не смог найти ответ.";
-      await ctx2.reply(reply);
-
-      // После одного ответа отключаем обработчик
-      bot.off('text', handler);
-    } catch (err) {
-      console.error(err);
-      await ctx2.reply("Ошибка при получении ответа от AI.");
-    }
-  };
-
-  bot.on('text', handler);
 });
 
-// === Обработка резуль
+bot.on('text', async (ctx) => {
+  if (!awaitingAIQuestion.has(ctx.from.id)) return;
+
+  try {
+    const completion = await openai.chat.completions.create({
+      messages: [{ role: "user", content: ctx.message.text }],
+      model: "gpt-4o",
+    });
+
+    const reply = completion.choices[0]?.message?.content || "Извините, не смог найти ответ.";
+    await ctx.reply(reply);
+  } catch (err) {
+    console.error(err);
+    await ctx.reply("Ошибка при получении ответа от AI.");
+  }
+
+  awaitingAIQuestion.delete(ctx.from.id); // Сбросить состояние после ответа
+});
+
+// === Обработка квиза ===
+app.post('/send-results', async (req, res) => {
+  const { name, email, answers } = req.body;
+  const message = `📥 Новый квиз:\n👤 Имя: ${name}\n💬 Telegram: ${email}\n🧠 Ответы:\n${answers.join('\n')}`;
+  try {
+    await bot.telegram.sendMessage(process.env.ADMIN_ID, message);
+    res.status(200).send('OK');
+  } catch (e) {
+    console.error(e);
+    res.status(500).send('Ошибка при отправке');
+  }
+});
+
+bot.launch();
+app.listen(process.env.PORT || 3000, () => console.log('Backend started'));
