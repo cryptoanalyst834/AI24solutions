@@ -1,132 +1,80 @@
-const express = require('express');
-const bodyParser = require('body-parser');
-const { Telegraf } = require('telegraf');
-const cors = require('cors');
-const { OpenAI } = require("openai");
-require('dotenv').config();
+// server.js (фрагмент с полной реализацией подписки)
+const fs = require('fs');
+const path = require('path');
 
-const app = express();
-app.use(cors());
-app.use(bodyParser.json());
+// Путь к JSON-файлу с платными пользователями
+const PAID_USERS_PATH = path.join(__dirname, 'paid_users.json');
 
-app.use((req, res, next) => {
-  console.log(`➡️ ${req.method} ${req.url}`);
-  next();
-});
+// Загружаем платных пользователей из файла
+let paidUsers = new Set();
+try {
+  const data = fs.readFileSync(PAID_USERS_PATH, 'utf8');
+  const ids = JSON.parse(data);
+  paidUsers = new Set(ids);
+  console.log('✅ Загружены платные пользователи:', [...paidUsers]);
+} catch (err) {
+  console.log('⚠️ Не удалось загрузить paid_users.json, создаётся новый.');
+  fs.writeFileSync(PAID_USERS_PATH, JSON.stringify([]));
+}
 
-const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
+// Сохраняем платных пользователей в файл
+function savePaidUsers() {
+  fs.writeFileSync(PAID_USERS_PATH, JSON.stringify([...paidUsers], null, 2));
+}
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENROUTER_API_KEY,
-  baseURL: "https://openrouter.ai/api/v1",
-  defaultHeaders: {
-    "HTTP-Referer": "https://ai24solutions.onrender.com/",
-    "X-Title": "AI24SolutionsBot"
+// /addpaid @username
+bot.command('addpaid', async (ctx) => {
+  const adminId = parseInt(process.env.ADMIN_ID);
+  if (ctx.from.id !== adminId) return ctx.reply("❌ Нет прав доступа.");
+
+  const args = ctx.message.text.split(" ");
+  if (args.length < 2 || !args[1].startsWith("@")) {
+    return ctx.reply("⚠️ Использование: /addpaid @username");
+  }
+
+  const username = args[1].substring(1);
+  try {
+    const chat = await bot.telegram.getChat(`@${username}`);
+    paidUsers.add(chat.id);
+    savePaidUsers();
+    ctx.reply(`✅ @${username} (ID: ${chat.id}) добавлен в подписку.`);
+  } catch (err) {
+    console.error("❌ Ошибка добавления:", err);
+    ctx.reply("❌ Не удалось найти пользователя.");
   }
 });
 
-// Подключаем webhook к Express
-app.use(bot.webhookCallback('/telegram'));
+// /listpaid
+bot.command('listpaid', async (ctx) => {
+  const adminId = parseInt(process.env.ADMIN_ID);
+  if (ctx.from.id !== adminId) return ctx.reply("❌ Нет прав доступа.");
 
-// === /start ===
-bot.start((ctx) => {
-  const name = ctx.from.first_name || 'друг';
-  ctx.reply(`Привет, ${name}! 👋\nНажми кнопку ниже, чтобы пройти квиз и получить стратегию развития с ИИ.`, {
-    reply_markup: {
-      keyboard: [[{ text: '📝 Пройти квиз', web_app: { url: process.env.WEB_APP_URL } }]],
-      resize_keyboard: true,
-    },
-  });
+  const list = [...paidUsers];
+  if (list.length === 0) return ctx.reply("⚠️ Список подписчиков пуст.");
+  ctx.reply(`👥 Подписчики (${list.length}):\n` + list.map(id => `• ${id}`).join("\n"));
 });
 
-// === FSM для AI-режима ===
-const awaitingAIQuestion = new Set();
+// /remove @username
+bot.command('remove', async (ctx) => {
+  const adminId = parseInt(process.env.ADMIN_ID);
+  if (ctx.from.id !== adminId) return ctx.reply("❌ Нет прав доступа.");
 
-bot.command('ai', (ctx) => {
-  awaitingAIQuestion.add(ctx.from.id);
-  ctx.reply('Введите ваш вопрос по AI, и я постараюсь ответить 🙂');
-});
+  const args = ctx.message.text.split(" ");
+  if (args.length < 2 || !args[1].startsWith("@")) {
+    return ctx.reply("⚠️ Использование: /remove @username");
+  }
 
-bot.on('text', async (ctx) => {
-  if (!awaitingAIQuestion.has(ctx.from.id)) return;
-
-  const question = ctx.message.text;
-  const estimatedLength = question.length;
-  const user = ctx.from;
-  const maxTokens = estimatedLength > 700 ? 1000 : estimatedLength > 300 ? 800 : 400;
-
-  const primaryModel = "gpt-4o";
-  const fallbackModel = "gpt-3.5-turbo";
-
-  // Отправим вопрос администратору
-  const adminLog = `📨 Новый AI-вопрос:\n👤 ${user.first_name} (@${user.username || "нет username"})\n🧠 Вопрос: ${question}`;
-  await bot.telegram.sendMessage(process.env.ADMIN_ID, adminLog);
-
+  const username = args[1].substring(1);
   try {
-    const completion = await openai.chat.completions.create({
-      messages: [{ role: "user", content: question }],
-      model: primaryModel,
-      max_tokens: maxTokens
-    });
-
-    const reply = completion.choices[0]?.message?.content || "Извините, не смог найти ответ.";
-    await ctx.reply(reply);
-
-    // Уведомим админа об успешной генерации
-    await bot.telegram.sendMessage(process.env.ADMIN_ID, `✅ Ответ отправлен пользователю. Модель: ${primaryModel}`);
-  } catch (err) {
-    const errorMessage = err.response?.data || err.message || err;
-    console.error("❌ GPT ERROR:", errorMessage);
-
-    const isLimitError = JSON.stringify(errorMessage).includes("402");
-
-    if (isLimitError) {
-      try {
-        const fallback = await openai.chat.completions.create({
-          messages: [{ role: "user", content: question }],
-          model: fallbackModel,
-          max_tokens: Math.min(400, maxTokens)
-        });
-
-        const reply = fallback.choices[0]?.message?.content || "Ответ от fallback-модели не найден.";
-        await ctx.reply(`⚠️ GPT-4 недоступен, ответ от GPT-3.5:\n\n${reply}`);
-
-        // Лог для админа
-        await bot.telegram.sendMessage(process.env.ADMIN_ID, `⚠️ Использована fallback-модель (${fallbackModel})`);
-      } catch (e2) {
-        const err2 = e2.response?.data || e2.message || e2;
-        console.error("❌ Fallback GPT-3.5 Error:", err2);
-        await ctx.reply("❌ Ошибка при переключении на GPT-3.5.");
-        await bot.telegram.sendMessage(process.env.ADMIN_ID, "❌ Ошибка fallback-модели GPT-3.5");
-      }
-    } else {
-      await ctx.reply("Ошибка AI: " + JSON.stringify(errorMessage).slice(0, 300) + "...");
+    const chat = await bot.telegram.getChat(`@${username}`);
+    if (!paidUsers.has(chat.id)) {
+      return ctx.reply(`⚠️ @${username} не найден в подписке.`);
     }
-  }
-
-  awaitingAIQuestion.delete(ctx.from.id);
-});
-
-// === Обработка квиза ===
-app.post('/send-results', async (req, res) => {
-  const { name, email, answers } = req.body;
-  const message = `📥 Новый квиз:\n👤 Имя: ${name}\n💬 Telegram: ${email}\n🧠 Ответы:\n${answers.join('\n')}`;
-  try {
-    await bot.telegram.sendMessage(process.env.ADMIN_ID, message);
-    res.status(200).send('OK');
+    paidUsers.delete(chat.id);
+    savePaidUsers();
+    ctx.reply(`✅ @${username} удалён из подписчиков.`);
   } catch (err) {
-    const errorMessage = err.response?.data || err.message || err;
-    console.error("❌ Ошибка отправки в Telegram:", errorMessage);
-    res.status(500).send('Ошибка при отправке');
+    console.error("❌ Ошибка удаления:", err);
+    ctx.reply("❌ Не удалось найти пользователя.");
   }
 });
-
-// === Запуск бота через Webhook ===
-bot.launch({
-  webhook: {
-    domain: process.env.DOMAIN,
-    port: process.env.PORT || 3000,
-  }
-});
-
-console.log('✅ Webhook запущен через Telegraf');
