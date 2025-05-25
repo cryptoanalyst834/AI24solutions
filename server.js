@@ -11,7 +11,8 @@ app.use(bodyParser.json());
 const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
 
 bot.start((ctx) => {
-  ctx.reply('Привет! Нажми кнопку ниже, чтобы пройти квиз.', {
+  const name = ctx.from.first_name || 'друг';
+  ctx.reply(`Привет, ${name}! 👋\nНажми кнопку ниже, чтобы пройти квиз и получить стратегию развития с ИИ.`, {
     reply_markup: {
       keyboard: [[{ text: '📝 Пройти квиз', web_app: { url: process.env.WEB_APP_URL } }]],
       resize_keyboard: true,
