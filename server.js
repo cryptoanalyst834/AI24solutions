@@ -12,6 +12,9 @@ app.use(bodyParser.json());
 const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+// === Подключение webhook к Express ===
+app.use(bot.webhookCallback('/telegram'));
+
 // === Персонализация /start ===
 bot.start((ctx) => {
   const name = ctx.from.first_name || 'друг';
@@ -23,7 +26,7 @@ bot.start((ctx) => {
   });
 });
 
-// === Простая FSM для режима AI-вопроса ===
+// === AI-вопросы через FSM ===
 const awaitingAIQuestion = new Set();
 
 bot.command('ai', (ctx) => {
@@ -42,26 +45,9 @@ bot.on('text', async (ctx) => {
 
     const reply = completion.choices[0]?.message?.content || "Извините, не смог найти ответ.";
     await ctx.reply(reply);
- } catch (err) {
-  console.error("❌ GPT ERROR:", err.response?.data || err.message || err);
-  await ctx.reply("Ошибка при получении ответа от AI.");
-}
-
-  awaitingAIQuestion.delete(ctx.from.id); // Сбросить состояние после ответа
-});
-
-// === Обработка квиза ===
-app.post('/send-results', async (req, res) => {
-  const { name, email, answers } = req.body;
-  const message = `📥 Новый квиз:\n👤 Имя: ${name}\n💬 Telegram: ${email}\n🧠 Ответы:\n${answers.join('\n')}`;
-  try {
-    await bot.telegram.sendMessage(process.env.ADMIN_ID, message);
-    res.status(200).send('OK');
-  } catch (e) {
-    console.error(e);
-    res.status(500).send('Ошибка при отправке');
+  } catch (err) {
+    console.error("❌ GPT ERROR:", err.response?.data || err.message || err);
+    await ctx.reply("Ошибка при получении ответа от AI.");
   }
-});
 
-bot.launch();
-app.listen(process.env.PORT || 3000, () => console.log('Backend started'));
+  awaitingAIQuestio
