@@ -1,11 +1,36 @@
-// server.js (фрагмент с полной реализацией подписки)
+// === ИМПОРТЫ ===
+const express = require('express');
+const bodyParser = require('body-parser');
+const { Telegraf } = require('telegraf');
+const cors = require('cors');
+const { OpenAI } = require("openai");
 const fs = require('fs');
 const path = require('path');
+require('dotenv').config();
 
-// Путь к JSON-файлу с платными пользователями
+// === ИНИЦИАЛИЗАЦИЯ ===
+const app = express();
+app.use(cors());
+app.use(bodyParser.json());
+
+app.use((req, res, next) => {
+  console.log(`➡️ ${req.method} ${req.url}`);
+  next();
+});
+
+const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENROUTER_API_KEY,
+  baseURL: "https://openrouter.ai/api/v1",
+  defaultHeaders: {
+    "HTTP-Referer": "https://ai24solutions.onrender.com/",
+    "X-Title": "AI24SolutionsBot"
+  }
+});
+
+// === ПОДПИСКИ ===
 const PAID_USERS_PATH = path.join(__dirname, 'paid_users.json');
-
-// Загружаем платных пользователей из файла
 let paidUsers = new Set();
 try {
   const data = fs.readFileSync(PAID_USERS_PATH, 'utf8');
@@ -16,22 +41,15 @@ try {
   console.log('⚠️ Не удалось загрузить paid_users.json, создаётся новый.');
   fs.writeFileSync(PAID_USERS_PATH, JSON.stringify([]));
 }
-
-// Сохраняем платных пользователей в файл
 function savePaidUsers() {
   fs.writeFileSync(PAID_USERS_PATH, JSON.stringify([...paidUsers], null, 2));
 }
 
-// /addpaid @username
+// === КОМАНДЫ АДМИНА ===
 bot.command('addpaid', async (ctx) => {
-  const adminId = parseInt(process.env.ADMIN_ID);
-  if (ctx.from.id !== adminId) return ctx.reply("❌ Нет прав доступа.");
-
+  if (ctx.from.id !== parseInt(process.env.ADMIN_ID)) return ctx.reply("❌ Нет прав доступа.");
   const args = ctx.message.text.split(" ");
-  if (args.length < 2 || !args[1].startsWith("@")) {
-    return ctx.reply("⚠️ Использование: /addpaid @username");
-  }
-
+  if (args.length < 2 || !args[1].startsWith("@")) return ctx.reply("⚠️ Использование: /addpaid @username");
   const username = args[1].substring(1);
   try {
     const chat = await bot.telegram.getChat(`@${username}`);
@@ -44,32 +62,21 @@ bot.command('addpaid', async (ctx) => {
   }
 });
 
-// /listpaid
 bot.command('listpaid', async (ctx) => {
-  const adminId = parseInt(process.env.ADMIN_ID);
-  if (ctx.from.id !== adminId) return ctx.reply("❌ Нет прав доступа.");
-
+  if (ctx.from.id !== parseInt(process.env.ADMIN_ID)) return ctx.reply("❌ Нет прав доступа.");
   const list = [...paidUsers];
   if (list.length === 0) return ctx.reply("⚠️ Список подписчиков пуст.");
   ctx.reply(`👥 Подписчики (${list.length}):\n` + list.map(id => `• ${id}`).join("\n"));
 });
 
-// /remove @username
 bot.command('remove', async (ctx) => {
-  const adminId = parseInt(process.env.ADMIN_ID);
-  if (ctx.from.id !== adminId) return ctx.reply("❌ Нет прав доступа.");
-
+  if (ctx.from.id !== parseInt(process.env.ADMIN_ID)) return ctx.reply("❌ Нет прав доступа.");
   const args = ctx.message.text.split(" ");
-  if (args.length < 2 || !args[1].startsWith("@")) {
-    return ctx.reply("⚠️ Использование: /remove @username");
-  }
-
+  if (args.length < 2 || !args[1].startsWith("@")) return ctx.reply("⚠️ Использование: /remove @username");
   const username = args[1].substring(1);
   try {
     const chat = await bot.telegram.getChat(`@${username}`);
-    if (!paidUsers.has(chat.id)) {
-      return ctx.reply(`⚠️ @${username} не найден в подписке.`);
-    }
+    if (!paidUsers.has(chat.id)) return ctx.reply(`⚠️ @${username} не найден в подписке.`);
     paidUsers.delete(chat.id);
     savePaidUsers();
     ctx.reply(`✅ @${username} удалён из подписчиков.`);
