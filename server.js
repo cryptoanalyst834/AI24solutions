@@ -42,10 +42,10 @@ bot.on('text', async (ctx) => {
 
     const reply = completion.choices[0]?.message?.content || "Извините, не смог найти ответ.";
     await ctx.reply(reply);
-  } catch (err) {
-    console.error(err);
-    await ctx.reply("Ошибка при получении ответа от AI.");
-  }
+ } catch (err) {
+  console.error("❌ GPT ERROR:", err.response?.data || err.message || err);
+  await ctx.reply("Ошибка при получении ответа от AI.");
+}
 
   awaitingAIQuestion.delete(ctx.from.id); // Сбросить состояние после ответа
 });
