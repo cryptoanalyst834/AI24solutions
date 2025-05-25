@@ -16,7 +16,15 @@ app.use((req, res, next) => {
 });
 
 const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const { OpenAI } = require("openai");
+const openai = new OpenAI({
+  apiKey: process.env.OPENROUTER_API_KEY,
+  baseURL: "https://openrouter.ai/api/v1",
+  defaultHeaders: {
+    "HTTP-Referer": "https://ai24solutions.onrender.com/", // свой домен или сайт
+    "X-Title": "AI24SolutionsBot"
+  }
+});
 
 // Подключаем webhook обработку в Express
 app.use(bot.webhookCallback('/telegram'));
