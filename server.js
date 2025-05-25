@@ -55,7 +55,8 @@ bot.on('text', async (ctx) => {
   try {
     const completion = await openai.chat.completions.create({
       messages: [{ role: "user", content: ctx.message.text }],
-      model: "gpt-4o"
+      model: "gpt-4o",
+      max_tokens: 300
     });
 
     const reply = completion.choices[0]?.message?.content || "Извините, не смог найти ответ.";
