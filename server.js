@@ -50,4 +50,28 @@ bot.on('text', async (ctx) => {
     await ctx.reply("Ошибка при получении ответа от AI.");
   }
 
-  awaitingAIQuestio
+  awaitingAIQuestion.delete(ctx.from.id);
+});
+
+// === Обработка квиза ===
+app.post('/send-results', async (req, res) => {
+  const { name, email, answers } = req.body;
+  const message = `📥 Новый квиз:\n👤 Имя: ${name}\n💬 Telegram: ${email}\n🧠 Ответы:\n${answers.join('\n')}`;
+  try {
+    await bot.telegram.sendMessage(process.env.ADMIN_ID, message);
+    res.status(200).send('OK');
+  } catch (e) {
+    console.error(e);
+    res.status(500).send('Ошибка при отправке');
+  }
+});
+
+// === Запуск webhook-бота + сервера ===
+bot.launch({
+  webhook: {
+    domain: process.env.DOMAIN,
+    port: process.env.PORT || 3000,
+  }
+});
+
+app.listen(process.env.PORT || 3000, () => console.log('✅ Backend started'));
