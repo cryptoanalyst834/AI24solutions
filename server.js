@@ -9,7 +9,7 @@ const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
-// 🔹 Лог входящих запросов для отладки
+// Лог запросов
 app.use((req, res, next) => {
   console.log(`➡️ ${req.method} ${req.url}`);
   next();
@@ -18,10 +18,10 @@ app.use((req, res, next) => {
 const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// 🔹 Подключение Webhook к Express
+// Подключаем webhook обработку в Express
 app.use(bot.webhookCallback('/telegram'));
 
-// 🔹 Обработка команды /start
+// /start
 bot.start((ctx) => {
   const name = ctx.from.first_name || 'друг';
   ctx.reply(`Привет, ${name}! 👋\nНажми кнопку ниже, чтобы пройти квиз и получить стратегию развития с ИИ.`, {
@@ -32,7 +32,7 @@ bot.start((ctx) => {
   });
 });
 
-// 🔹 FSM-подход: отслеживаем, кто задал /ai
+// /ai режим
 const awaitingAIQuestion = new Set();
 
 bot.command('ai', (ctx) => {
@@ -42,7 +42,7 @@ bot.command('ai', (ctx) => {
 
 bot.on('text', async (ctx) => {
   console.log("📨 Текст от пользователя:", ctx.message.text);
-  
+
   if (!awaitingAIQuestion.has(ctx.from.id)) return;
 
   try {
@@ -61,7 +61,7 @@ bot.on('text', async (ctx) => {
   awaitingAIQuestion.delete(ctx.from.id);
 });
 
-// 🔹 Прием данных из WebApp квиза
+// POST из WebApp
 app.post('/send-results', async (req, res) => {
   const { name, email, answers } = req.body;
   const message = `📥 Новый квиз:\n👤 Имя: ${name}\n💬 Telegram: ${email}\n🧠 Ответы:\n${answers.join('\n')}`;
@@ -74,7 +74,7 @@ app.post('/send-results', async (req, res) => {
   }
 });
 
-// 🔹 Запуск webhook и сервера
+// 🟢 Запуск только webhook-а (Telegraf займёт порт сам)
 bot.launch({
   webhook: {
     domain: process.env.DOMAIN,
@@ -82,6 +82,4 @@ bot.launch({
   }
 });
 
-app.listen(process.env.PORT || 3000, () => {
-  console.log('✅ Backend started');
-});
+console.log('✅ Webhook запущен через Telegraf');
