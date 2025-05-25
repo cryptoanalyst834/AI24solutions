@@ -9,24 +9,23 @@ const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
-// Лог запросов
 app.use((req, res, next) => {
   console.log(`➡️ ${req.method} ${req.url}`);
   next();
 });
 
 const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
-const { OpenAI } = require("openai");
+
 const openai = new OpenAI({
   apiKey: process.env.OPENROUTER_API_KEY,
   baseURL: "https://openrouter.ai/api/v1",
   defaultHeaders: {
-    "HTTP-Referer": "https://ai24solutions.onrender.com/", // свой домен или сайт
+    "HTTP-Referer": "https://ai24solutions.onrender.com/",
     "X-Title": "AI24SolutionsBot"
   }
 });
 
-// Подключаем webhook обработку в Express
+// Webhook к Express
 app.use(bot.webhookCallback('/telegram'));
 
 // /start
@@ -40,7 +39,7 @@ bot.start((ctx) => {
   });
 });
 
-// /ai режим
+// AI-режим
 const awaitingAIQuestion = new Set();
 
 bot.command('ai', (ctx) => {
@@ -56,14 +55,15 @@ bot.on('text', async (ctx) => {
   try {
     const completion = await openai.chat.completions.create({
       messages: [{ role: "user", content: ctx.message.text }],
-      model: "gpt-4o"
+      model: "openrouter/gpt-4o"
     });
 
     const reply = completion.choices[0]?.message?.content || "Извините, не смог найти ответ.";
     await ctx.reply(reply);
   } catch (err) {
-    console.error("❌ GPT ERROR:", err.response?.data || err.message || err);
-    await ctx.reply("Ошибка при получении ответа от AI.");
+    const errorMessage = err.response?.data || err.message || err;
+    console.error("❌ GPT ERROR:", errorMessage);
+    await ctx.reply(`Ошибка AI: ${JSON.stringify(errorMessage).slice(0, 300)}...`);
   }
 
   awaitingAIQuestion.delete(ctx.from.id);
@@ -77,13 +77,13 @@ app.post('/send-results', async (req, res) => {
     await bot.telegram.sendMessage(process.env.ADMIN_ID, message);
     res.status(200).send('OK');
   } catch (err) {
-  const errorMessage = err.response?.data || err.message || err;
-  console.error("❌ GPT ERROR:", errorMessage);
-  await ctx.reply(`Ошибка AI: ${JSON.stringify(errorMessage).slice(0, 300)}...`);
-}
+    const errorMessage = err.response?.data || err.message || err;
+    console.error("❌ Ошибка отправки в Telegram:", errorMessage);
+    res.status(500).send('Ошибка при отправке');
+  }
 });
 
-// 🟢 Запуск только webhook-а (Telegraf займёт порт сам)
+// Запуск webhook
 bot.launch({
   webhook: {
     domain: process.env.DOMAIN,
