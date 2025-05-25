@@ -68,10 +68,11 @@ app.post('/send-results', async (req, res) => {
   try {
     await bot.telegram.sendMessage(process.env.ADMIN_ID, message);
     res.status(200).send('OK');
-  } catch (e) {
-    console.error("❌ Ошибка отправки в Telegram:", e);
-    res.status(500).send('Ошибка при отправке');
-  }
+  } catch (err) {
+  const errorMessage = err.response?.data || err.message || err;
+  console.error("❌ GPT ERROR:", errorMessage);
+  await ctx.reply(`Ошибка AI: ${JSON.stringify(errorMessage).slice(0, 300)}...`);
+}
 });
 
 // 🟢 Запуск только webhook-а (Telegraf займёт порт сам)
