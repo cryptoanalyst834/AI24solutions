@@ -68,9 +68,13 @@ bot.hears('💡 Ассистент AI24', async (ctx) => {
   await ctx.reply('Выберите интересующее направление:', Markup.keyboard(assistantOptions.map(o => [o])).resize());
 });
 
-bot.hears(assistantOptions, async (ctx) => {
-  const response = assistantResponses[ctx.message.text];
-  if (response) return ctx.reply(response);
+assistantOptions.forEach(option => {
+  bot.hears(option, async (ctx) => {
+    const response = assistantResponses[option];
+    if (response) {
+      await ctx.reply(response);
+    }
+  });
 });
 
 // ==== Анкета ====
