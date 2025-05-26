@@ -1,118 +1,125 @@
-// AI24Solutions Telegram-бот с Google Sheets, CORS и человечным ассистентом
 const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
 const { Telegraf, Markup } = require('telegraf');
 const { google } = require('googleapis');
 const path = require('path');
-require('dotenv').config();
+const dotenv = require('dotenv');
+const { OpenAI } = require("openai");
 
+dotenv.config();
 const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
+// Telegram bot
 const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
 
+// OpenRouter (GPT-4o)
+const openai = new OpenAI({
+  apiKey: process.env.OPENROUTER_API_KEY,
+  baseURL: "https://openrouter.ai/api/v1",
+  defaultHeaders: {
+    "HTTP-Referer": "https://ai24solutions.onrender.com/", // свой домен
+    "X-Title": "AI24SolutionsBot"
+  }
+});
+
+// Google Sheets setup
 const auth = new google.auth.GoogleAuth({
   keyFile: path.join(__dirname, 'credentials.json'),
   scopes: ['https://www.googleapis.com/auth/spreadsheets']
 });
-
 const SPREADSHEET_ID = '1CajOn3ncsj8h21uxAk10XQWJTD40R6195oJKGSQPJaQ';
 const SHEET_NAME = 'Лист2';
 
+// Меню и приветствие
 const mainMenu = Markup.keyboard([
   ['💡 Ассистент AI24', '📝 Пройти квиз'],
   ['🤖 Задать AI-вопрос']
 ]).resize();
 
-const greetings = `Здравствуйте! Я — ассистент AI24Solutions 🤖\n\nПомогаю разобраться с нейро-решениями и автоматизацией. Выберите режим работы ниже:`;
-
-const assistantReplies = {
-  'Автоматизация бизнес-процессов': `🔧 Автоматизация бизнес-процессов — наш ключевой профиль. Мы внедряем нейросети и чат-ботов для экономии времени, сокращения ручной работы и роста продаж.\n\nПодробнее на сайте: https://ai24solutions.ru/audits`,
-  'Чат-боты и ассистенты': `🤖 Мы создаём чат-ботов для Telegram, WhatsApp, Instagram и сайтов. Они умеют консультировать, продавать, обучать и даже записывать клиентов.\n\nПосмотрите примеры: https://ai24solutions.tilda.ws/chat-bots`,
-  'Обучение персонала нейросетям': `🎓 Проводим практикумы для команд. Покажем, как использовать ChatGPT, Midjourney, Canva и другие инструменты на реальных задачах бизнеса.\n\nПрограмма обучения: https://ai24solutions.ru/educations`,
-  'Индивидуальное ИИ-решение под задачу': `📈 У вас нестандартная задача? Мы поможем разработать кастомное решение с нейросетями, автоматизацией и CRM-интеграцией.\n\nПишите, обсудим подход.`
-};
-
-const formStep = {};
-const formData = {};
 const awaitingAIQuestion = new Set();
+let formStep = {};
+let formData = {};
 
 bot.start((ctx) => {
-  console.log('▶️ /start получен');
-  const userName = ctx.from.first_name || 'друг';
-  ctx.reply(`Привет, ${userName}!\n\n${greetings}`, mainMenu);
+  const name = ctx.from.first_name || 'друг';
+  ctx.reply(`Привет, ${name}! 👋\n\nЯ — ассистент AI24Solutions. Помогаю разобраться с нейро-решениями. Выбери, с чего начать:`, mainMenu);
 });
+
+// ==== Ассистент ====
+const assistantOptions = [
+  "Автоматизация бизнес-процессов",
+  "Чат-боты и ассистенты",
+  "Обучение персонала нейросетям",
+  "Индивидуальное ИИ-решение под задачу",
+  "Задать вопрос или оставить заявку"
+];
+
+const assistantResponses = {
+  "Автоматизация бизнес-процессов": `📊 Мы проводим бесплатный аудит процессов и помогаем внедрить AI туда, где это даёт прибыль.\nПодробнее: https://ai24solutions.ru/audits`,
+  "Чат-боты и ассистенты": `🤖 Создаём Telegram-ботов, ассистентов, консультантов и ботов для HR/записей.\nПодробнее: https://ai24solutions.tilda.ws/chat-bots`,
+  "Обучение персонала нейросетям": `🎓 Проводим короткие и эффективные практикумы по ChatGPT, Midjourney, автоматизации без кода и др.\nПодробнее: https://ai24solutions.ru/educations`,
+  "Индивидуальное ИИ-решение под задачу": `📈 Помогаем сократить рутину, повысить продажи и принимать решения на основе данных.\nПодробнее: https://ai24solutions.ru/analytics`
+};
 
 bot.hears('💡 Ассистент AI24', async (ctx) => {
-  const keyboard = Markup.keyboard([
-    ['Автоматизация бизнес-процессов'],
-    ['Чат-боты и ассистенты'],
-    ['Обучение персонала нейросетям'],
-    ['Индивидуальное ИИ-решение под задачу'],
-    ['Задать вопрос или оставить заявку']
-  ]).resize();
-
-  await ctx.reply('Выберите направление, которое вам интересно:', keyboard);
+  await ctx.reply('Выберите интересующее направление:', Markup.keyboard(assistantOptions.map(o => [o])).resize());
 });
 
-bot.hears('🤖 Задать AI-вопрос', async (ctx) => {
-  awaitingAIQuestion.add(ctx.from.id);
-  await ctx.reply('Введите ваш вопрос по AI — постараюсь ответить максимально понятно и по-человечески 🙂');
+bot.hears(assistantOptions, async (ctx) => {
+  const response = assistantResponses[ctx.message.text];
+  if (response) return ctx.reply(response);
 });
 
-bot.hears('📝 Пройти квиз', (ctx) => {
-  ctx.reply('Откройте квиз по кнопке ниже:', {
-    reply_markup: {
-      inline_keyboard: [
-        [
-          {
-            text: '🚀 Пройти квиз',
-            web_app: { url: process.env.WEB_APP_URL }
-          }
-        ]
-      ]
-    }
-  });
+// ==== Анкета ====
+bot.hears('Задать вопрос или оставить заявку', async (ctx) => {
+  const id = ctx.from.id;
+  formStep[id] = 1;
+  formData[id] = {};
+  await ctx.reply('1️⃣ Как вас зовут?');
 });
 
 bot.on('text', async (ctx) => {
-  console.log('📨 Сообщение от пользователя:', ctx.message.text);
-
   const id = ctx.from.id;
   const text = ctx.message.text;
 
+  // AI-вопрос
   if (awaitingAIQuestion.has(id)) {
     awaitingAIQuestion.delete(id);
-    // Здесь можно подключить OpenAI API или заглушку
-    return ctx.reply('🧠 Спасибо за вопрос! Я передам его экспертам и вернусь с ответом.');
+
+    try {
+      const completion = await openai.chat.completions.create({
+        model: "openrouter/gpt-4o",
+        messages: [{ role: "user", content: text }]
+      });
+
+      const reply = completion.choices[0]?.message?.content || "Ответ от AI не получен.";
+      return ctx.reply(reply);
+    } catch (err) {
+      console.error("❌ Ошибка AI:", err.message || err);
+      return ctx.reply("Произошла ошибка при обращении к AI. Попробуйте позже.");
+    }
   }
 
-  if (assistantReplies[text]) {
-    return ctx.reply(assistantReplies[text]);
-  }
-
-  if (text === 'Задать вопрос или оставить заявку') {
-    await ctx.reply('1️⃣ Как вас зовут?');
-    formStep[id] = 1;
-    formData[id] = {};
-    return;
-  }
-
+  // Анкета
   if (formStep[id]) {
     if (formStep[id] === 1) formData[id].name = text;
-    else if (formStep[id] === 2) formData[id].business = text;
-    else if (formStep[id] === 3) formData[id].goal = text;
-    else if (formStep[id] === 4) {
+    if (formStep[id] === 2) formData[id].business = text;
+    if (formStep[id] === 3) formData[id].goal = text;
+    if (formStep[id] === 4) {
       formData[id].contact = text;
+
       const msg = `📥 Новый лид:\n👤 Имя: ${formData[id].name}\n🏢 Бизнес: ${formData[id].business}\n🎯 Задача: ${formData[id].goal}\n📬 Контакт: ${formData[id].contact}`;
-      await ctx.reply('✅ Спасибо! Мы свяжемся с вами в ближайшее время.');
+      await ctx.reply("✅ Спасибо! Мы свяжемся с вами в ближайшее время.");
       await bot.telegram.sendMessage(process.env.ADMIN_ID, msg);
+
       delete formStep[id];
       delete formData[id];
       return;
     }
+
     formStep[id]++;
     if (formStep[id] === 2) return ctx.reply('2️⃣ Чем занимается ваш бизнес?');
     if (formStep[id] === 3) return ctx.reply('3️⃣ Какая задача стоит?');
@@ -120,9 +127,11 @@ bot.on('text', async (ctx) => {
   }
 });
 
+// ==== WebApp-квиз ====
 app.post('/send-results', async (req, res) => {
   const { name, email, answers } = req.body;
-  console.log('📩 Получен запрос от WebApp:', req.body);
+  console.log('📩 Запрос из WebApp:', req.body);
+
   const message = `📥 Новый квиз:\n👤 Имя: ${name}\n💬 Telegram: ${email}\n🧠 Ответы:\n${answers.join('\n')}`;
 
   try {
@@ -148,10 +157,23 @@ app.post('/send-results', async (req, res) => {
   }
 });
 
-app.get('/', (_, res) => {
-  res.send('✅ AI24Solutions backend работает');
+// ==== Квиз кнопка ====
+bot.hears('📝 Пройти квиз', async (ctx) => {
+  await ctx.reply('Откройте квиз по кнопке ниже:', {
+    reply_markup: {
+      inline_keyboard: [[{ text: '🚀 Пройти квиз', web_app: { url: process.env.WEB_APP_URL } }]]
+    }
+  });
 });
 
+// ==== AI-вопрос ====
+bot.hears('🤖 Задать AI-вопрос', async (ctx) => {
+  awaitingAIQuestion.add(ctx.from.id);
+  await ctx.reply('Введите ваш вопрос — постараюсь ответить максимально понятно 🤖');
+});
+
+// ==== Express старт ====
+app.get('/', (_, res) => res.send('AI24Solutions бот работает ✅'));
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`✅ Сервер слушает порт ${PORT}`);
