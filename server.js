@@ -5,7 +5,6 @@ const { Telegraf, Markup } = require('telegraf');
 const { google } = require('googleapis');
 const path = require('path');
 require('dotenv').config();
-keyFile: path.join(__dirname, 'credentials.json')
 
 const app = express();
 app.use(bodyParser.json());
