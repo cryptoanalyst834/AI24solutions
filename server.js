@@ -15,17 +15,17 @@ app.use(bodyParser.json());
 // Telegram bot
 const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
 
-// OpenRouter (GPT-4o)
+// GPT-4o через OpenRouter
 const openai = new OpenAI({
   apiKey: process.env.OPENROUTER_API_KEY,
   baseURL: "https://openrouter.ai/api/v1",
   defaultHeaders: {
-    "HTTP-Referer": "https://ai24solutions.onrender.com/", // свой домен
+    "HTTP-Referer": "https://ai24solutions.onrender.com/",
     "X-Title": "AI24SolutionsBot"
   }
 });
 
-// Google Sheets setup
+// Google Sheets
 const auth = new google.auth.GoogleAuth({
   keyFile: path.join(__dirname, 'credentials.json'),
   scopes: ['https://www.googleapis.com/auth/spreadsheets']
@@ -33,7 +33,7 @@ const auth = new google.auth.GoogleAuth({
 const SPREADSHEET_ID = '1CajOn3ncsj8h21uxAk10XQWJTD40R6195oJKGSQPJaQ';
 const SHEET_NAME = 'Лист2';
 
-// Меню и приветствие
+// Главное меню
 const mainMenu = Markup.keyboard([
   ['💡 Ассистент AI24', '📝 Пройти квиз'],
   ['🤖 Задать AI-вопрос']
@@ -68,12 +68,11 @@ bot.hears('💡 Ассистент AI24', async (ctx) => {
   await ctx.reply('Выберите интересующее направление:', Markup.keyboard(assistantOptions.map(o => [o])).resize());
 });
 
+// правильная обработка кнопок из массива
 assistantOptions.forEach(option => {
   bot.hears(option, async (ctx) => {
     const response = assistantResponses[option];
-    if (response) {
-      await ctx.reply(response);
-    }
+    if (response) await ctx.reply(response);
   });
 });
 
@@ -161,7 +160,7 @@ app.post('/send-results', async (req, res) => {
   }
 });
 
-// ==== Квиз кнопка ====
+// ==== Квиз ====
 bot.hears('📝 Пройти квиз', async (ctx) => {
   await ctx.reply('Откройте квиз по кнопке ниже:', {
     reply_markup: {
