@@ -1,4 +1,4 @@
-// AI24Solutions Telegram-бот с Google Sheets и CORS на верном порту
+// AI24Solutions Telegram-бот с Google Sheets и CORS
 const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
@@ -28,9 +28,30 @@ const mainMenu = Markup.keyboard([
 
 const greetings = `Я — ассистент AI24Solutions 🤖\n\nПомогаю разобраться с нейро-решениями и автоматизацией. Выберите режим работы ниже:`;
 
+const formStep = {};
+const formData = {};
+const awaitingAIQuestion = new Set();
+
 bot.start((ctx) => {
   const userName = ctx.from.first_name || 'друг';
   ctx.reply(`Привет, ${userName}!\n\n${greetings}`, mainMenu);
+});
+
+bot.hears('💡 Ассистент AI24', async (ctx) => {
+  const keyboard = Markup.keyboard([
+    ['Автоматизация бизнес-процессов'],
+    ['Чат-боты и ассистенты'],
+    ['Обучение персонала нейросетям'],
+    ['Индивидуальное ИИ-решение под задачу'],
+    ['Задать вопрос или оставить заявку']
+  ]).resize();
+
+  await ctx.reply('Выберите направление, которое вам интересно:', keyboard);
+});
+
+bot.hears('🤖 Задать AI-вопрос', async (ctx) => {
+  awaitingAIQuestion.add(ctx.from.id);
+  await ctx.reply('Введите ваш вопрос по AI — я постараюсь ответить 🙂');
 });
 
 bot.hears('📝 Пройти квиз', (ctx) => {
@@ -46,6 +67,54 @@ bot.hears('📝 Пройти квиз', (ctx) => {
       ]
     }
   });
+});
+
+bot.on('text', async (ctx) => {
+  const id = ctx.from.id;
+  const text = ctx.message.text;
+
+  if (awaitingAIQuestion.has(id)) {
+    awaitingAIQuestion.delete(id);
+    return ctx.reply('🧠 (ответ будет от AI — временно отключено)');
+  }
+
+  if (text === 'Автоматизация бизнес-процессов') {
+    return ctx.reply('📊 Подробнее: https://ai24solutions.ru/audits');
+  }
+  if (text === 'Чат-боты и ассистенты') {
+    return ctx.reply('🤖 Подробнее: https://ai24solutions.tilda.ws/chat-bots');
+  }
+  if (text === 'Обучение персонала нейросетям') {
+    return ctx.reply('🎓 Подробнее: https://ai24solutions.ru/educations');
+  }
+  if (text === 'Индивидуальное ИИ-решение под задачу') {
+    return ctx.reply('📈 Подробнее: https://ai24solutions.ru/analytics');
+  }
+  if (text === 'Задать вопрос или оставить заявку') {
+    await ctx.reply('1️⃣ Как вас зовут?');
+    formStep[id] = 1;
+    formData[id] = {};
+    return;
+  }
+
+  if (formStep[id]) {
+    if (formStep[id] === 1) formData[id].name = text;
+    if (formStep[id] === 2) formData[id].business = text;
+    if (formStep[id] === 3) formData[id].goal = text;
+    if (formStep[id] === 4) {
+      formData[id].contact = text;
+      const msg = `📥 Новый лид:\n👤 Имя: ${formData[id].name}\n🏢 Бизнес: ${formData[id].business}\n🎯 Задача: ${formData[id].goal}\n📬 Контакт: ${formData[id].contact}`;
+      await ctx.reply('✅ Спасибо! Мы свяжемся с вами в ближайшее время.');
+      await bot.telegram.sendMessage(process.env.ADMIN_ID, msg);
+      delete formStep[id];
+      delete formData[id];
+      return;
+    }
+    formStep[id]++;
+    if (formStep[id] === 2) return ctx.reply('2️⃣ Чем занимается ваш бизнес?');
+    if (formStep[id] === 3) return ctx.reply('3️⃣ Какая задача стоит?');
+    if (formStep[id] === 4) return ctx.reply('4️⃣ Контакт (Telegram / почта)');
+  }
 });
 
 app.post('/send-results', async (req, res) => {
