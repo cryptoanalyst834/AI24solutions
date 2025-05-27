@@ -12,6 +12,7 @@ app.use(bodyParser.json());
 
 const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
 
+// OpenRouter
 const openai = new OpenAI({
   apiKey: process.env.OPENROUTER_API_KEY,
   baseURL: 'https://openrouter.ai/api/v1',
@@ -40,36 +41,40 @@ const assistantResponses = {
   "Индивидуальное ИИ-решение под задачу": "📈 Подробнее: https://ai24solutions.ru/analytics"
 };
 
+// Состояния
 const awaitingAI = new Set();
 const auditStep = {};
 const auditData = {};
 
+// Старт
 bot.start((ctx) => {
   const name = ctx.from.first_name || 'друг';
   ctx.reply(`Привет, ${name}! Я — ассистент AI24Solutions 🤖\nЧем могу помочь?`, mainMenu);
 });
 
-// 💡 Ассистент
+// Ассистент
 bot.hears('💡 Ассистент AI24', (ctx) => {
   ctx.reply('Выберите направление:', Markup.keyboard(assistantOptions.map(o => [o])).resize());
 });
 
-assistantOptions.forEach((text) => {
-  bot.hears(text, (ctx) => {
-    ctx.reply(assistantResponses[text]);
+assistantOptions.forEach((option) => {
+  bot.hears(option, (ctx) => {
+    ctx.reply(assistantResponses[option]);
   });
 });
 
-// 🤖 AI-вопрос
+// AI-вопрос
 bot.hears('🤖 Задать AI-вопрос', (ctx) => {
   awaitingAI.add(ctx.from.id);
   ctx.reply('Напишите свой вопрос по AI — и я постараюсь ответить 🤖');
 });
 
+// Основной обработчик
 bot.on('text', async (ctx) => {
   const id = ctx.from.id;
   const text = ctx.message.text;
 
+  // AI-вопрос
   if (awaitingAI.has(id)) {
     awaitingAI.delete(id);
     try {
@@ -86,9 +91,10 @@ bot.on('text', async (ctx) => {
     }
   }
 
-  // 📩 Аудит: шаги
+  // Анкета на аудит
   if (auditStep[id]) {
     if (!auditData[id]) auditData[id] = {};
+
     const step = auditStep[id];
 
     if (step === 1) {
@@ -112,16 +118,19 @@ bot.on('text', async (ctx) => {
       delete auditData[id];
       return;
     }
+
+    return; // защита
   }
 
-  // Старт анкеты по кнопке
+  // Запуск анкеты
   if (text === '📩 Заказать бесплатный аудит') {
     auditStep[id] = 1;
-    ctx.reply("👋 Представьтесь, пожалуйста:");
+    auditData[id] = {};
+    return ctx.reply("👋 Представьтесь, пожалуйста:");
   }
 });
 
-// Express проверка
+// Проверка сервера
 app.get('/', (_, res) => res.send('✅ AI24Solutions бот работает'));
 
 const PORT = process.env.PORT || 3000;
