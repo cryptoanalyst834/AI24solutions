@@ -12,10 +12,8 @@ const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
-// Инициализация Telegram-бота
 const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
 
-// OpenRouter GPT-4o
 const openai = new OpenAI({
   apiKey: process.env.OPENROUTER_API_KEY,
   baseURL: 'https://openrouter.ai/api/v1',
@@ -25,7 +23,6 @@ const openai = new OpenAI({
   }
 });
 
-// Google Sheets
 const auth = new google.auth.GoogleAuth({
   keyFile: path.join(__dirname, 'credentials.json'),
   scopes: ['https://www.googleapis.com/auth/spreadsheets']
@@ -33,7 +30,6 @@ const auth = new google.auth.GoogleAuth({
 const SPREADSHEET_ID = '1CajOn3ncsj8h21uxAk10XQWJTD40R6195oJKGSQPJaQ';
 const SHEET_NAME = 'Лист2';
 
-// Главное меню
 const mainMenu = Markup.keyboard([
   ['💡 Ассистент AI24', '📝 Пройти квиз'],
   ['🤖 Задать AI-вопрос']
@@ -55,34 +51,28 @@ const assistantResponses = {
 
 const awaitingAI = new Set();
 
-// /start
 bot.start((ctx) => {
   const name = ctx.from.first_name || 'друг';
   ctx.reply(`Привет, ${name}! Я — бот AI24Solutions 🤖`, mainMenu);
 });
 
-// Ассистент
 bot.hears('💡 Ассистент AI24', (ctx) => {
   ctx.reply('Выберите направление:', Markup.keyboard(assistantOptions.map(o => [o])).resize());
 });
-
 assistantOptions.forEach((text) => {
   bot.hears(text, (ctx) => {
     ctx.reply(assistantResponses[text]);
   });
 });
 
-// AI-вопрос
 bot.hears('🤖 Задать AI-вопрос', (ctx) => {
   awaitingAI.add(ctx.from.id);
   ctx.reply('Напишите ваш вопрос, и я постараюсь ответить 💬');
 });
 
-// Обработка текстов
 bot.on('text', async (ctx) => {
   const id = ctx.from.id;
   const text = ctx.message.text;
-
   if (awaitingAI.has(id)) {
     awaitingAI.delete(id);
     try {
@@ -96,12 +86,11 @@ bot.on('text', async (ctx) => {
       await ctx.reply(reply);
     } catch (err) {
       console.error("❌ AI Error:", err.message || err);
-      await ctx.reply("⚠️ Ошибка при обращении к нейросети. Попробуйте позже.");
+      await ctx.reply("⚠️ Ошибка при обращении к нейросети.");
     }
   }
 });
 
-// Квиз через WebApp
 bot.hears('📝 Пройти квиз', async (ctx) => {
   await ctx.reply('Откройте квиз по кнопке ниже:', {
     reply_markup: {
@@ -113,19 +102,19 @@ bot.hears('📝 Пройти квиз', async (ctx) => {
   });
 });
 
-// Получение результата квиза
 app.post('/send-results', async (req, res) => {
   const { name, email, answers } = req.body;
   console.log('📩 Квиз отправлен:', req.body);
-
-  const message = `📥 Новый квиз:\n👤 ${name}\n📬 ${email}\n🧠 ${answers.join('\n')}`;
+  const message = `📥 Новый квиз:
+👤 ${name}
+📬 ${email}
+🧠 ${answers.join('
+')}`;
   try {
     await bot.telegram.sendMessage(process.env.ADMIN_ID, message);
-
     const authClient = await auth.getClient();
     const sheets = google.sheets({ version: 'v4', auth: authClient });
     const now = new Date().toLocaleString('ru-RU');
-
     await sheets.spreadsheets.values.append({
       spreadsheetId: SPREADSHEET_ID,
       range: `${SHEET_NAME}!A1`,
@@ -134,7 +123,6 @@ app.post('/send-results', async (req, res) => {
         values: [[now, name, email, ...answers]]
       }
     });
-
     res.status(200).send('OK');
   } catch (e) {
     console.error("❌ Ошибка записи в таблицу:", e.message || e);
@@ -142,7 +130,6 @@ app.post('/send-results', async (req, res) => {
   }
 });
 
-// Корневой маршрут
 app.get('/', (_, res) => res.send('✅ Бот AI24Solutions работает'));
 
 const PORT = process.env.PORT || 3000;
