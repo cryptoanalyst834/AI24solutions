@@ -12,8 +12,10 @@ const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
+// Инициализация Telegram-бота
 const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
 
+// OpenRouter GPT-4o
 const openai = new OpenAI({
   apiKey: process.env.OPENROUTER_API_KEY,
   baseURL: 'https://openrouter.ai/api/v1',
@@ -23,6 +25,7 @@ const openai = new OpenAI({
   }
 });
 
+// Google Sheets
 const auth = new google.auth.GoogleAuth({
   keyFile: path.join(__dirname, 'credentials.json'),
   scopes: ['https://www.googleapis.com/auth/spreadsheets']
@@ -30,7 +33,8 @@ const auth = new google.auth.GoogleAuth({
 const SPREADSHEET_ID = '1CajOn3ncsj8h21uxAk10XQWJTD40R6195oJKGSQPJaQ';
 const SHEET_NAME = 'Лист2';
 
-const menu = Markup.keyboard([
+// Главное меню
+const mainMenu = Markup.keyboard([
   ['💡 Ассистент AI24', '📝 Пройти квиз'],
   ['🤖 Задать AI-вопрос']
 ]).resize();
@@ -51,24 +55,30 @@ const assistantResponses = {
 
 const awaitingAI = new Set();
 
+// /start
 bot.start((ctx) => {
   const name = ctx.from.first_name || 'друг';
-  ctx.reply(`Привет, ${name}! Я — бот AI24Solutions 🤖`, menu);
+  ctx.reply(`Привет, ${name}! Я — бот AI24Solutions 🤖`, mainMenu);
 });
 
+// Ассистент
 bot.hears('💡 Ассистент AI24', (ctx) => {
-  ctx.reply('Выберите направление:', Markup.keyboard(assistantOptions.map(t => [t])).resize());
+  ctx.reply('Выберите направление:', Markup.keyboard(assistantOptions.map(o => [o])).resize());
 });
 
 assistantOptions.forEach((text) => {
-  bot.hears(text, (ctx) => ctx.reply(assistantResponses[text]));
+  bot.hears(text, (ctx) => {
+    ctx.reply(assistantResponses[text]);
+  });
 });
 
+// AI-вопрос
 bot.hears('🤖 Задать AI-вопрос', (ctx) => {
   awaitingAI.add(ctx.from.id);
   ctx.reply('Напишите ваш вопрос, и я постараюсь ответить 💬');
 });
 
+// Обработка текстов
 bot.on('text', async (ctx) => {
   const id = ctx.from.id;
   const text = ctx.message.text;
@@ -78,17 +88,20 @@ bot.on('text', async (ctx) => {
     try {
       const res = await openai.chat.completions.create({
         model: 'gpt-4o',
+        max_tokens: 1000,
+        temperature: 0.7,
         messages: [{ role: 'user', content: text }]
       });
-      const reply = res.choices[0]?.message?.content || 'Не удалось получить ответ';
+      const reply = res.choices[0]?.message?.content || 'Ответ не получен.';
       await ctx.reply(reply);
     } catch (err) {
       console.error("❌ AI Error:", err.message || err);
-      ctx.reply("Ошибка при обращении к нейросети.");
+      await ctx.reply("⚠️ Ошибка при обращении к нейросети. Попробуйте позже.");
     }
   }
 });
 
+// Квиз через WebApp
 bot.hears('📝 Пройти квиз', async (ctx) => {
   await ctx.reply('Откройте квиз по кнопке ниже:', {
     reply_markup: {
@@ -100,6 +113,7 @@ bot.hears('📝 Пройти квиз', async (ctx) => {
   });
 });
 
+// Получение результата квиза
 app.post('/send-results', async (req, res) => {
   const { name, email, answers } = req.body;
   console.log('📩 Квиз отправлен:', req.body);
@@ -128,6 +142,7 @@ app.post('/send-results', async (req, res) => {
   }
 });
 
+// Корневой маршрут
 app.get('/', (_, res) => res.send('✅ Бот AI24Solutions работает'));
 
 const PORT = process.env.PORT || 3000;
