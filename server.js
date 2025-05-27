@@ -77,7 +77,7 @@ bot.on('text', async (ctx) => {
     awaitingAI.delete(id);
     try {
       const res = await openai.chat.completions.create({
-        model: 'openrouter/gpt-4o',
+        model: 'gpt-4o',
         messages: [{ role: 'user', content: text }]
       });
       const reply = res.choices[0]?.message?.content || 'Не удалось получить ответ';
