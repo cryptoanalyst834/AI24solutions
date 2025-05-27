@@ -94,10 +94,9 @@ bot.on('text', async (ctx) => {
 bot.hears('📝 Пройти квиз', async (ctx) => {
   await ctx.reply('Откройте квиз по кнопке ниже:', {
     reply_markup: {
-      inline_keyboard: [[{
-        text: '🚀 Пройти квиз',
-        web_app: { url: process.env.WEB_APP_URL }
-      }]]
+      inline_keyboard: [[
+        { text: '🚀 Пройти квиз', web_app: { url: process.env.WEB_APP_URL } }
+      ]]
     }
   });
 });
