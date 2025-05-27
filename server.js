@@ -4,6 +4,8 @@ const cors = require('cors');
 const { Telegraf, Markup } = require('telegraf');
 const dotenv = require('dotenv');
 const { OpenAI } = require('openai');
+const { google } = require('googleapis');
+const path = require('path');
 
 dotenv.config();
 const app = express();
@@ -12,7 +14,6 @@ app.use(bodyParser.json());
 
 const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
 
-// OpenRouter
 const openai = new OpenAI({
   apiKey: process.env.OPENROUTER_API_KEY,
   baseURL: 'https://openrouter.ai/api/v1',
@@ -22,6 +23,15 @@ const openai = new OpenAI({
   }
 });
 
+// === Google Sheets ===
+const auth = new google.auth.GoogleAuth({
+  keyFile: path.join(__dirname, 'credentials.json'),
+  scopes: ['https://www.googleapis.com/auth/spreadsheets']
+});
+const SPREADSHEET_ID = '1CajOn3ncsj8h21uxAk10XQWJTD40R6195oJKGSQPJaQ';
+const SHEET_NAME = 'Лист2';
+
+// Главное меню
 const mainMenu = Markup.keyboard([
   ['💡 Ассистент AI24', '🤖 Задать AI-вопрос'],
   ['📩 Заказать бесплатный аудит']
@@ -94,7 +104,6 @@ bot.on('text', async (ctx) => {
   // Анкета на аудит
   if (auditStep[id]) {
     if (!auditData[id]) auditData[id] = {};
-
     const step = auditStep[id];
 
     if (step === 1) {
@@ -112,14 +121,36 @@ bot.on('text', async (ctx) => {
     if (step === 3) {
       auditData[id].contact = text;
       const msg = `📩 Заявка на аудит:\n👤 Имя: ${auditData[id].name}\n🧠 Задача: ${auditData[id].task}\n📞 Контакт: ${auditData[id].contact}`;
-      await ctx.reply("✅ Спасибо! Мы свяжемся с вами в ближайшее время.");
-      await bot.telegram.sendMessage(process.env.ADMIN_ID, msg);
+
+      try {
+        await bot.telegram.sendMessage(process.env.ADMIN_ID, msg);
+
+        console.log('📥 Пишем в Google Sheets:', auditData[id]);
+
+        const authClient = await auth.getClient();
+        const sheets = google.sheets({ version: 'v4', auth: authClient });
+        const now = new Date().toLocaleString('ru-RU');
+
+        await sheets.spreadsheets.values.append({
+          spreadsheetId: SPREADSHEET_ID,
+          range: `${SHEET_NAME}!A1`,
+          valueInputOption: 'USER_ENTERED',
+          requestBody: {
+            values: [[now, auditData[id].name, auditData[id].task, auditData[id].contact]]
+          }
+        });
+
+        await ctx.reply("✅ Спасибо! Мы свяжемся с вами в ближайшее время.");
+      } catch (error) {
+        console.error('❌ Ошибка записи в таблицу:', error);
+        await ctx.reply("⚠️ Не удалось записать данные. Свяжитесь с нами вручную @ai24solutions");
+      }
+
       delete auditStep[id];
       delete auditData[id];
       return;
     }
-
-    return; // защита
+    return;
   }
 
   // Запуск анкеты
