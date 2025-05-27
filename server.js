@@ -1,6 +1,4 @@
-import os
-
-server_code = '''const express = require('express');
+const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
 const { Telegraf, Markup } = require('telegraf');
@@ -51,6 +49,7 @@ bot.start((ctx) => {
   ctx.reply(`Привет, ${name}! Я — ассистент AI24Solutions 🤖\nЧем могу помочь?`, mainMenu);
 });
 
+// 💡 Ассистент
 bot.hears('💡 Ассистент AI24', (ctx) => {
   ctx.reply('Выберите направление:', Markup.keyboard(assistantOptions.map(o => [o])).resize());
 });
@@ -61,6 +60,7 @@ assistantOptions.forEach((text) => {
   });
 });
 
+// 🤖 AI-вопрос
 bot.hears('🤖 Задать AI-вопрос', (ctx) => {
   awaitingAI.add(ctx.from.id);
   ctx.reply('Напишите свой вопрос по AI — и я постараюсь ответить 🤖');
@@ -86,6 +86,7 @@ bot.on('text', async (ctx) => {
     }
   }
 
+  // 📩 Аудит: шаги
   if (auditStep[id]) {
     if (!auditData[id]) auditData[id] = {};
     const step = auditStep[id];
@@ -113,22 +114,17 @@ bot.on('text', async (ctx) => {
     }
   }
 
+  // Старт анкеты по кнопке
   if (text === '📩 Заказать бесплатный аудит') {
     auditStep[id] = 1;
     ctx.reply("👋 Представьтесь, пожалуйста:");
   }
 });
 
+// Express проверка
 app.get('/', (_, res) => res.send('✅ AI24Solutions бот работает'));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`✅ Сервер слушает порт ${PORT}`));
 bot.launch();
 console.log('🤖 Бот AI24Solutions запущен');
-'''
-
-path = "/mnt/data/server.js"
-with open(path, "w") as f:
-    f.write(server_code)
-
-path
