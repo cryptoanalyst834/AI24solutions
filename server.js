@@ -105,11 +105,8 @@ bot.hears('📝 Пройти квиз', async (ctx) => {
 app.post('/send-results', async (req, res) => {
   const { name, email, answers } = req.body;
   console.log('📩 Квиз отправлен:', req.body);
-  const message = `📥 Новый квиз:
-👤 ${name}
-📬 ${email}
-🧠 ${answers.join('
-')}`;
+  const message = `📥 Новый квиз:\n👤 ${name}\n📬 ${email}\n🧠 ${answers.join('\n')}`;
+  
   try {
     await bot.telegram.sendMessage(process.env.ADMIN_ID, message);
     const authClient = await auth.getClient();
