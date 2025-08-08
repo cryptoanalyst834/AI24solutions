@@ -1,8 +1,5 @@
-# 🔐 Не включать секретные данные
 credentials.json
 
-# 📦 node_modules
 node_modules/
 
-# 📄 конфигурации
 .env
