@@ -117,6 +117,40 @@ async function answerAI(userText) {
   const raw = res.choices[0]?.message?.content || 'Не удалось получить ответ.';
   return enforceSales(raw);
 }
+// === AI24 · WebChat (sales) ===================================
+function salesSystemPrompt() {
+  return {
+    role: 'system',
+    content:
+      "You are AI24Solutions Sales Consultant. Speak Russian concisely and helpfully. " +
+      "Audience: owners and managers (experts, salons/cosmetology, fitness/wellness, therapists, freelancers, B2B services, e-commerce). " +
+      "Goal: give real value AND convert to a lead for AI24Solutions. " +
+      "Rules: 1) Answer to the point (bullets, short steps). 2) Always end with 1-2 CTAs to try PULSE (AI-seller) " +
+      "and leave contact (@username or phone). 3) Stay supportive, avoid arguing. 4) If user shares contact — that’s a lead."
+  };
+}
+
+async function answerSalesAI(userText) {
+  const res = await openai.chat.completions.create({
+    model: 'gpt-4o',
+    max_tokens: 600,
+    messages: [salesSystemPrompt(), { role: 'user', content: userText }]
+  });
+  return res.choices?.[0]?.message?.content?.trim() || 'Не удалось получить ответ.';
+}
+
+// CORS открыт (у тебя уже app.use(cors())); при необходимости — сузим под домен
+app.post('/webchat', express.json(), async (req, res) => {
+  try {
+    const msg = (req.body?.message || '').trim();
+    if (!msg) return res.status(400).json({ ok: false, error: 'message required' });
+    const answer = await answerSalesAI(msg);
+    return res.json({ ok: true, answer });
+  } catch (e) {
+    console.error('webchat error:', e.message || e);
+    return res.status(500).json({ ok: false, error: 'ai_failed' });
+  }
+});
 
 // Извлекаем контакт из свободного текста
 function extractContact(text) {
