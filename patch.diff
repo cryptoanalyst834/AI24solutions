@@ -1,227 +1,140 @@
-<diff --git a/server.js b/server.js
-index 0a6cf11..4b7a9d3 100644
+diff --git a/server.js b/server.js
+index 4f9e1a3..c2b77d1 100644
 --- a/server.js
 +++ b/server.js
 @@ -1,6 +1,7 @@
- // server.js — AI24SolutionsBot (PULSE v1)
+ // server.js — AI24SolutionsBot (PULSE v1.1)
  const express = require('express');
  const bodyParser = require('body-parser');
-+const fs = require('fs');
++const crypto = require('crypto');
  const cors = require('cors');
  const dotenv = require('dotenv');
  const path = require('path');
-@@ -38,7 +39,7 @@ async function getSheetsClient() {
-   let keyFile = process.env.GOOGLE_APPLICATION_CREDENTIALS;
-   let cleanup = null;
-   if (process.env.GOOGLE_CREDENTIALS_BASE64 && !keyFile) {
--    const buf = Buffer.from(process.env.GOOGLE_CREDENTIALS_BASE64, 'base64');
-+    const buf = Buffer.from(process.env.GOOGLE_CREDENTIALS_BASE64, 'base64');
-     const tmp = path.join(__dirname, 'gsa.tmp.json');
--    require('fs').writeFileSync(tmp, buf);
-+    fs.writeFileSync(tmp, buf);
-     keyFile = tmp;
-     cleanup = () => { try { require('fs').unlinkSync(tmp); } catch {} };
-   }
-@@ -55,6 +56,35 @@ const SHEET_NAME = process.env.SHEET_NAME || 'Лист2';
- 
- function typing(ctx, ms = 600) { ctx.sendChatAction('typing'); return new Promise(r => setTimeout(r, ms)); }
- 
-+// ===== Lead logger (admin + Google Sheets)
-+async function logLead(ctx, { niche = '—', contact = '—', note = '' } = {}) {
-+  const now = new Date().toLocaleString('ru-RU');
-+  const tgId = ctx.from?.id || '';
-+  const username = ctx.from?.username || '';
-+  const first = ctx.from?.first_name || '';
-+  const row = [now, niche, contact, tgId, username, first, note];
+@@ -63,12 +64,46 @@ function typing(ctx, ms = 600) {
+   return new Promise((r) => setTimeout(r, ms));
+ }
+
+-async function answerAI(text) {
+-  const res = await openai.chat.completions.create({
+-    model: 'gpt-4o',
+-    max_tokens: 800,
+-    messages: [{ role: 'user', content: text }]
+-  });
++// Сейлз-промпт: ответы по сути + всегда подводят к лидам
++async function answerAI(text) {
++  const systemMsg = {
++    role: 'system',
++    content:
++      "You are AI24Solutions Sales Consultant. Answer briefly, practical, no fluff. " +
++      "Audience: business owners (experts, salons/cosmetology, fitness/wellness, therapists, freelancers, B2B services, e-commerce). " +
++      "Goal: convert dialog into lead for AI24Solutions. " +
++      "Rules: 1) Give clear, valuable answer. 2) Then 1-2 short CTAs: offer PULSE AI-seller demo and suggest to leave contact. " +
++      "3) Never argue, be supportive. 4) If user shares phone or @username — that's a lead."
++  };
++  const userMsg = { role: 'user', content: text };
 +
-+  // Admin notify
-+  if (process.env.ADMIN_ID) {
-+    try {
-+      await ctx.telegram.sendMessage(
-+        process.env.ADMIN_ID,
-+        `📩 Заявка PULSE\nНиша: ${niche}\nКонтакт: ${contact}\nTG: @${username || '—'}\nID: ${tgId}\n${note ? 'Примечание: ' + note : ''}`
-+      );
-+    } catch (e) { console.error('Admin notify error:', e.message); }
-+  }
-+
-+  // Sheets
-+  try {
-+    const { sheets, cleanup } = await getSheetsClient();
-+    await sheets.spreadsheets.values.append({
-+      spreadsheetId: SPREADSHEET_ID,
-+      range: `${SHEET_NAME}!A1`,
-+      valueInputOption: 'USER_ENTERED',
-+      requestBody: { values: [row] }
-+    });
-+    if (cleanup) cleanup();
-+  } catch (e) { console.error('Sheets error:', e.message); }
-+}
-+
- // ==== Scenes (PULSE funnel)
- const pulseWizard = new Scenes.WizardScene(
-   'pulse',
-@@ -86,16 +116,15 @@ const pulseWizard = new Scenes.WizardScene(
-     await typing(ctx);
-     await ctx.reply('Хочешь посмотреть, как PULSE будет работать с твоей аудиторией?',
-       Markup.keyboard([['Да'], ['Интересно'], ['Назад в меню']]).resize()
-     );
-     return ctx.wizard.next();
-   },
-   async (ctx) => {
--    const agree = (ctx.message?.text || '').toLowerCase();
--    if (agree.includes('назад')) { await ctx.reply('Главное меню:', mainMenu); return ctx.scene.leave(); }
-+    const agree = (ctx.message?.text || '').toLowerCase();
-+    if (agree.includes('назад')) {
-+      // Лид всё равно фиксируем (без контакта) и выходим в меню
-+      await logLead(ctx, { niche: ctx.wizard.state.niche || '—', contact: `@${ctx.from?.username || '—'}`, note: '(back-to-menu at agree step)' });
-+      await ctx.reply('Главное меню:', mainMenu); 
-+      return ctx.scene.leave(); 
-+    }
-     await typing(ctx);
-     await ctx.reply(
-       'Супер. Подготовлю персональный план внедрения под твою нишу.\n' +
-       'Оставь, пожалуйста, контакт, куда отправить результат:\n' +
-       '• 📞 телефон (WhatsApp/Telegram)\n' +
-       'или\n' +
-       '• 🔗 @username'
-     );
-     return ctx.wizard.next();
-   },
-   async (ctx) => {
--    const contact = (ctx.message?.text || '').trim();
--    ctx.wizard.state.contact = contact;
--    const niche = ctx.wizard.state.niche || '—';
--    const now = new Date().toLocaleString('ru-RU');
--    const row = [now, niche, contact, ctx.from?.id, ctx.from?.username || '', ctx.from?.first_name || ''];
--
--    if (process.env.ADMIN_ID) {
--      try {
--        await ctx.telegram.sendMessage(
--          process.env.ADMIN_ID,
--          `📩 Заявка PULSE\nНиша: ${niche}\nКонтакт: ${contact}\nTG: @${ctx.from?.username || '—'}\nID: ${ctx.from?.id}`
--        );
--      } catch (e) { console.error('Admin notify error:', e.message); }
--    }
--    try {
--      const { sheets, cleanup } = await getSheetsClient();
--      await sheets.spreadsheets.values.append({
--        spreadsheetId: SPREADSHEET_ID,
--        range: `${SHEET_NAME}!A1`,
--        valueInputOption: 'USER_ENTERED',
--        requestBody: { values: [row] }
--      });
--      if (cleanup) cleanup();
--    } catch (e) { console.error('Sheets error:', e.message); }
-+    const txt = (ctx.message?.text || '').trim();
-+    const niche = ctx.wizard.state.niche || '—';
-+
-+    // Если пользователь нажал "Назад в меню" на шаге контакта — тоже логируем лид
-+    if (txt.toLowerCase().includes('назад')) {
-+      await logLead(ctx, { niche, contact: `@${ctx.from?.username || '—'}`, note: '(back-to-menu at contact step)' });
-+      await typing(ctx, 400);
-+      await ctx.reply('Спасибо! Данные зафиксировал. Возвращаю в меню.', mainMenu);
-+      return ctx.scene.leave();
-+    }
-+
-+    ctx.wizard.state.contact = txt;
-+    await logLead(ctx, { niche, contact: txt, note: '(lead with contact)' });
- 
-     await typing(ctx, 400);
-     await ctx.reply(
-       'Спасибо! Я зафиксировал данные.\n' +
-       'Наш специалист AI24Solutions свяжется с тобой и пришлёт персональную схему внедрения PULSE.\n' +
-       'Хочешь пока задать любой вопрос про AI?',
-       Markup.keyboard([['🤖 Задать AI-вопрос'], ['Главное меню']]).resize()
-     );
-     return ctx.scene.leave();
-   }
- );
- 
- // ==== AI Q&A
- async function answerAI(text) {
-   const res = await openai.chat.completions.create({
-     model: 'gpt-4o',
-     max_tokens: 800,
-     messages: [{ role: 'user', content: text }]
-   });
++  const res = await openai.chat.completions.create({
++    model: 'gpt-4o',
++    max_tokens: 500,
++    messages: [systemMsg, userMsg]
++  });
    return res.choices[0]?.message?.content || 'Не удалось получить ответ.';
  }
- 
- // ==== Stage
- const stage = new Scenes.Stage([pulseWizard]);
- bot.use(session());
- bot.use(stage.middleware());
- 
- // ==== Handlers
- bot.start((ctx) => {
-   const name = ctx.from.first_name || 'друг';
-   ctx.reply(
-     `Привет, ${name}! Я — Консультант AI24 🤖\n` +
-     `Помогу увеличить продажи через AI-продавца PULSE и отвечу на вопросы про внедрение AI.`,
-     mainMenu
-   );
+
++// распознавание контакта в свободном тексте
++function extractContact(text) {
++  if (!text) return null;
++  const t = text.trim();
++  const at = t.match(/@([a-zA-Z0-9_]{3,})/);
++  if (at) return `@${at[1]}`;
++  const phone = t
++    .replace(/[^\d+]/g, '')
++    .match(/(\+?\d{10,15})/);
++  if (phone) return phone[1];
++  return null;
++}
++
+ // Логирование лида: админ + Google Sheets
+ async function logLead(ctx, { niche = '—', contact = '—', note = '' } = {}) {
+   const now = new Date().toLocaleString('ru-RU');
+@@ -86,7 +121,15 @@ async function logLead(ctx, { niche = '—', contact = '—', note = '' } = {}) {
+   // Запись в таблицу
+   try {
+     const { sheets, cleanup } = await getSheetsClient();
+-    await sheets.spreadsheets.values.append({
++    const uniq = crypto.randomUUID?.() || Math.random().toString(36).slice(2);
++    // Столбцы: Дата | Ниша | Контакт | TG_ID | Username | Имя | Примечание | UUID
++    await sheets.spreadsheets.values.append({
+       spreadsheetId: SPREADSHEET_ID,
+       range: `${SHEET_NAME}!A1`,
+       valueInputOption: 'USER_ENTERED',
+-      requestBody: { values: [row] }
++      requestBody: { values: [[...row, uniq]] }
+     });
+     if (cleanup) cleanup();
+   } catch (e) {
+     console.error('Sheets error:', e.message);
++    // уведомим админа об ошибке записи
++    if (process.env.ADMIN_ID) {
++      try { await ctx.telegram.sendMessage(process.env.ADMIN_ID, `⚠️ Sheets error: ${e.message}`); } catch {}
++    }
+   }
+ }
+@@ -220,6 +263,30 @@ bot.hears('🤖 Задать AI-вопрос', async (ctx) => {
+   await ctx.reply('Сформулируй вопрос про AI/внедрение — отвечу как эксперт.');
  });
- bot.hears('⚡ PULSE — увеличить продажи', (ctx) => ctx.scene.enter('pulse'));
- bot.hears('📩 Записаться на подключение', (ctx) => ctx.scene.enter('pulse'));
- bot.hears('Главное меню', (ctx) => ctx.reply('Выбери действие:', mainMenu));
- bot.command('demo', (ctx) => ctx.scene.enter('pulse'));
- bot.command('reset', async (ctx) => {
-   if (ctx.session?.__scenes) ctx.session.__scenes = null;
-   await ctx.reply('Диалог сброшен. Что делаем дальше?', mainMenu);
- });
--bot.hears('🤖 Задать AI-вопрос', async (ctx) => {
--  await ctx.reply('Сформулируй вопрос про AI/внедрение — отвечу как эксперт.');
--});
-+bot.hears('🤖 Задать AI-вопрос', async (ctx) => {
-+  ctx.session.awaitAI = true; // ждать следующий текст как вопрос к AI
-+  await ctx.reply('Сформулируй вопрос про AI/внедрение — отвечу как эксперт.');
+
++// Команда для проверки записи в таблицу
++bot.command('testlead', async (ctx) => {
++  try {
++    await logLead(ctx, {
++      niche: 'test',
++      contact: `@${ctx.from?.username || '—'}`,
++      note: '(manual /testlead)'
++    });
++    await ctx.reply('✅ Тестовая запись отправлена в таблицу.');
++  } catch (e) {
++    await ctx.reply('⚠️ Не удалось записать в таблицу, см. логи.');
++  }
 +});
++
  bot.on('text', async (ctx, next) => {
    const text = (ctx.message?.text || '').trim();
    const known = [
-     '⚡ PULSE — увеличить продажи','🤖 Задать AI-вопрос','📩 Записаться на подключение',
-     'Эксперт / онлайн-курс','Салон / косметолог','Фитнес / wellness','Психолог / терапевт',
-     'Фриланс / digital-услуги','B2B сервисы','E-commerce / товары','Другая ниша',
-     'Да','Интересно','Назад в меню','Главное меню'
-   ];
--  if (!known.includes(text) && !ctx.session?.__scenes) {
--    try { await typing(ctx); return ctx.reply(await answerAI(text), mainMenu); }
--    catch (e) { console.error('AI error:', e.message); return ctx.reply('⚠️ Ошибка при обращении к модели. Попробуй ещё раз.', mainMenu); }
--  }
--  return next();
-+
-+  // 1) Явно ждём вопрос к AI после нажатия кнопки
-+  if (ctx.session?.awaitAI) {
-+    ctx.session.awaitAI = false;
+@@ -241,6 +308,24 @@ bot.on('text', async (ctx, next) => {
+     }
+   }
+
++  // 2.5) Если пользователь прислал контакт в свободном виде — логируем лид
++  const contact = extractContact(text);
++  if (contact) {
 +    try {
-+      await typing(ctx);
-+      const ans = await answerAI(text);
-+      return ctx.reply(ans, mainMenu);
++      const niche = (ctx.session?.lastNiche || ctx.wizard?.state?.niche || '—');
++      await logLead(ctx, { niche, contact, note: '(captured from free text)' });
++      await ctx.reply(
++        'Спасибо! Зафиксировал контакт. Хочешь, пришлю персональный план внедрения PULSE под твой кейс?',
++        Markup.keyboard([['📩 Записаться на подключение'], ['⚡ PULSE — увеличить продажи']]).resize()
++      );
++      return;
 +    } catch (e) {
-+      console.error('AI error:', e.message);
-+      return ctx.reply('⚠️ Ошибка при обращении к модели. Попробуй ещё раз.', mainMenu);
++      // молча падаем дальше — чтобы не ломать сценарий
 +    }
 +  }
 +
-+  // 2) Если пользователь не в сцене и текст не из известных кнопок — считаем это вопросом к AI (фоллбек)
-+  const inScene = !!(ctx.scene && ctx.scene.current);
-+  if (!known.includes(text) && !inScene) {
-+    try {
-+      await typing(ctx);
-+      const ans = await answerAI(text);
-+      return ctx.reply(ans, mainMenu);
-+    } catch (e) {
-+      console.error('AI error:', e.message);
-+      return ctx.reply('⚠️ Ошибка при обращении к модели. Попробуй ещё раз.', mainMenu);
-+    }
-+  }
-+
-+  return next();
- });
- 
- // ==== Webhook
- app.use(bot.webhookCallback('/telegram'));
- bot.telegram.setWebhook(`${process.env.DOMAIN}/telegram`)
-   .then(() => console.log('📡 Webhook установлен'))
-   .catch(console.error);
->
+   // 2) Фоллбек: не в сцене и не кнопка → считаем вопросом к AI
+   const inScene = !!(ctx.scene && ctx.scene.current);
+   if (!known.includes(text) && !inScene) {
+@@ -249,7 +334,14 @@ bot.on('text', async (ctx, next) => {
+       const ans = await answerAI(text);
+-      return ctx.reply(ans, mainMenu);
++      await ctx.reply(ans);
++      return ctx.reply(
++        'Готов(а) посмотреть, как это внедрить у тебя? Выбери следующий шаг:',
++        Markup.keyboard([
++          ['📩 Записаться на подключение'],
++          ['⚡ PULSE — увеличить продажи'], ['Главное меню']
++        ]).resize()
++      );
+     } catch (e) {
+       console.error('AI error:', e.message);
+       return ctx.reply('⚠️ Ошибка при обращении к модели. Попробуй ещё раз.', mainMenu);
