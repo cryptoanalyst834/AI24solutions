@@ -14,9 +14,20 @@ const { google } = require('googleapis');
 dotenv.config();
 
 /* -------------------- Web server -------------------- */
-const app = express();
-app.use(cors());
-app.use(bodyParser.json());
+const cors = require('cors');
+
+app.use(cors({
+  origin: [
+    /(^https?:\/\/.*\.tilda\.ws$)/,
+    /(^https?:\/\/.*\.tilda\.cc$)/,
+    /(^https?:\/\/ai24solutions\.ru$)/,
+    /(^https?:\/\/www\.ai24solutions\.ru$)/,
+    /(^https?:\/\/ai24solutions\.onrender\.com$)/,
+  ],
+  methods: ['POST','OPTIONS'],
+  allowedHeaders: ['Content-Type'],
+  maxAge: 86400
+}));
 
 /* -------------------- Telegram bot ------------------ */
 if (!process.env.TELEGRAM_BOT_TOKEN) {
