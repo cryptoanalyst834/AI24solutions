@@ -1,527 +1,227 @@
-diff --git a/package.json b/package.json
-index 7f2b0b1..a3c2e44 100644
---- a/package.json
-+++ b/package.json
-@@ -1,22 +1,37 @@
- {
--  "name": "ai24solutions-bot",
--  "version": "1.0.0",
--  "description": "AI24Solutions Telegram Bot",
--  "main": "server.js",
--  "scripts": {
--    "start": "node server.js"
--  },
--  "dependencies": {
--    "body-parser": "^1.20.2",
--    "cors": "^2.8.5",
--    "dotenv": "^16.3.1",
--    "express": "^4.18.2",
--    "googleapis": "^136.0.0",
--    "openai": "^4.38.2",
--    "path": "^0.12.7",
--    "telegraf": "^4.16.2"
--  }
-+  "name": "ai24solutions-bot",
-+  "version": "1.1.0",
-+  "description": "AI24Solutions Telegram/Website assistant (PULSE funnel + AI Q&A)",
-+  "main": "server.js",
-+  "scripts": {
-+    "start": "node server.js",
-+    "dev": "nodemon --watch . --ext js,json server.js",
-+    "lint": "node -e \"console.log('✅ lint placeholder')\""
-+  },
-+  "dependencies": {
-+    "axios": "^1.7.7",
-+    "body-parser": "^1.20.2",
-+    "cors": "^2.8.5",
-+    "dotenv": "^16.4.5",
-+    "express": "^4.19.2",
-+    "googleapis": "^136.0.0",
-+    "openai": "^4.38.2",
-+    "path": "^0.12.7",
-+    "telegraf": "^4.16.2"
-+  },
-+  "devDependencies": {
-+    "nodemon": "^3.0.1"
-+  },
-+  "engines": {
-+    "node": ">=18.0.0"
-+  },
-+  "license": "MIT"
- }
-
-diff --git a/server.js b/server.js
-index 3f2e2a1..0a6cf11 100644
+<diff --git a/server.js b/server.js
+index 0a6cf11..4b7a9d3 100644
 --- a/server.js
 +++ b/server.js
-@@ -1,199 +1,334 @@
--const express = require('express');
--const bodyParser = require('body-parser');
--const cors = require('cors');
--const { Telegraf, Markup } = require('telegraf');
--const dotenv = require('dotenv');
--const { OpenAI } = require('openai');
--const { google } = require('googleapis');
--const path = require('path');
--
--dotenv.config();
--const app = express();
--app.use(cors());
--app.use(bodyParser.json());
--
--const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
--
--// OpenRouter (GPT-4o)
--const openai = new OpenAI({
--  apiKey: process.env.OPENROUTER_API_KEY,
--  baseURL: 'https://openrouter.ai/api/v1',
--  defaultHeaders: {
--    'HTTP-Referer': process.env.DOMAIN,
--    'X-Title': 'AI24SolutionsBot'
--  }
--});
--
--// Google Sheets
--const auth = new google.auth.GoogleAuth({
--  keyFile: path.join(__dirname, 'credentials.json'),
--  scopes: ['https://www.googleapis.com/auth/spreadsheets']
--});
--const SPREADSHEET_ID = '1CajOn3ncsj8h21uxAk10XQWJTD40R6195oJKGSQPJaQ';
--const SHEET_NAME = 'Лист2';
--
--// Главное меню
--const mainMenu = Markup.keyboard([
--  ['💡 Ассистент AI24', '🤖 Задать AI-вопрос'],
--  ['📩 Заказать бесплатный аудит']
--]).resize();
--
--// Ответы ассистента
--const assistantOptions = [
--  "Автоматизация бизнес-процессов",
--  "Чат-боты и ассистенты",
--  "Обучение персонала нейросетям",
--  "Индивидуальное ИИ-решение под задачу"
--];
--
--const assistantResponses = {
--  "Автоматизация бизнес-процессов": "📊 Автоматизируем воронки, внедряем нейросети в процессы.\nПодробнее: https://ai24solutions.ru/audits",
--  "Чат-боты и ассистенты": "🤖 Создаём Telegram-ботов, ассистентов и AI-консультантов.\nПримеры: https://ai24solutions.tilda.ws/chat-bots",
--  "Обучение персонала нейросетям": "🎓 Практикумы по ChatGPT, Midjourney и нейроавтоматизации.\nПодробнее: https://ai24solutions.ru/educations",
--  "Индивидуальное ИИ-решение под задачу": "📈 Аналитика, предсказание продаж, кастомные решения.\nПодробнее: https://ai24solutions.ru/analytics"
--};
--
--const awaitingAI = new Set();
--const auditStep = {};
--const auditData = {};
--
--bot.start((ctx) => {
--  const name = ctx.from.first_name || 'друг';
--  ctx.reply(`Привет, ${name}! Я — ассистент AI24Solutions 🤖\nЧем могу помочь?`, mainMenu);
--});
--
--// Ассистент
--bot.hears('💡 Ассистент AI24', (ctx) => {
--  ctx.reply('Выберите интересующее направление:', Markup.keyboard(assistantOptions.map(o => [o])).resize());
--});
--
--assistantOptions.forEach(option => {
--  bot.hears(option, (ctx) => {
--    ctx.reply(assistantResponses[option], mainMenu);
--  });
--});
--
--// AI-вопрос
--bot.hears('🤖 Задать AI-вопрос', (ctx) => {
--  awaitingAI.add(ctx.from.id);
--  ctx.reply('Введите ваш вопрос, и я постараюсь ответить 🤖');
--});
--
--bot.on('text', async (ctx) => {
--  const id = ctx.from.id;
--  const text = ctx.message.text;
--
--  if (awaitingAI.has(id)) {
--    awaitingAI.delete(id);
--    try {
--      const res = await openai.chat.completions.create({
--        model: 'gpt-4o',
--        max_tokens: 800,
--        messages: [{ role: 'user', content: text }]
--      });
--      const reply = res.choices[0]?.message?.content || '⚠️ Не удалось получить ответ.';
--      return ctx.reply(reply, mainMenu);
--    } catch (err) {
--      console.error('❌ AI Error:', err.message || err);
--      return ctx.reply('⚠️ Ошибка при обращении к нейросети. Попробуйте позже.', mainMenu);
--    }
--  }
--
--  // Аудит
--  if (auditStep[id]) {
--    if (!auditData[id]) auditData[id] = {};
--    const step = auditStep[id];
--
--    if (step === 1) {
--      auditData[id].name = text;
--      auditStep[id] = 2;
--      return ctx.reply("🧠 Опишите кратко вашу задачу или сферу:");
--    }
--
--    if (step === 2) {
--      auditData[id].task = text;
--      auditStep[id] = 3;
--      return ctx.reply("📞 Оставьте ваш контакт (Telegram или Email):");
--    }
--
--    if (step === 3) {
--      auditData[id].contact = text;
--
--      const msg = `📩 Заявка на аудит:\n👤 Имя: ${auditData[id].name}\n🧠 Задача: ${auditData[id].task}\n📞 Контакт: ${auditData[id].contact}`;
--      try {
--        await bot.telegram.sendMessage(process.env.ADMIN_ID, msg);
--
--        const authClient = await auth.getClient();
--        const sheets = google.sheets({ version: 'v4', auth: authClient });
--        const now = new Date().toLocaleString('ru-RU');
--
--        await sheets.spreadsheets.values.append({
--          spreadsheetId: SPREADSHEET_ID,
--          range: `${SHEET_NAME}!A1`,
--          valueInputOption: 'USER_ENTERED',
--          requestBody: {
--            values: [[now, auditData[id].name, auditData[id].task, auditData[id].contact]]
--          }
--        });
--
--        await ctx.reply("✅ Спасибо! Мы свяжемся с вами в ближайшее время.", mainMenu);
--      } catch (error) {
--        console.error('❌ Google Sheets Error:', error);
--        await ctx.reply("⚠️ Ошибка записи. Попробуйте позже или свяжитесь с нами вручную.", mainMenu);
--      }
--
--      delete auditStep[id];
--      delete auditData[id];
--      return;
--    }
--    return;
--  }
--
--  if (text === '📩 Заказать бесплатный аудит') {
--    auditStep[id] = 1;
--    auditData[id] = {};
--    return ctx.reply("👋 Представьтесь, пожалуйста:");
--  }
--});
--
--// Подключение Webhook
--app.use(bot.webhookCallback('/telegram'));
--
--bot.telegram.setWebhook(`${process.env.DOMAIN}/telegram`).then(() => {
--  console.log('📡 Webhook установлен');
--}).catch(console.error);
--
--// Сервер
--app.get('/', (_, res) => res.send('✅ AI24Solutions работает'));
--const PORT = process.env.PORT || 3000;
--app.listen(PORT, () => {
--  console.log(`🚀 Сервер слушает порт ${PORT}`);
--});
-+// server.js — AI24SolutionsBot (PULSE v1)
-+const express = require('express');
-+const bodyParser = require('body-parser');
-+const cors = require('cors');
-+const dotenv = require('dotenv');
-+const path = require('path');
-+const { Telegraf, Markup, Scenes, session } = require('telegraf');
-+const { OpenAI } = require('openai');
-+const { google } = require('googleapis');
-+
-+dotenv.config();
-+
-+const app = express();
-+app.use(cors());
-+app.use(bodyParser.json());
-+
-+// ==== Telegram
-+if (!process.env.TELEGRAM_BOT_TOKEN) throw new Error('TELEGRAM_BOT_TOKEN is missing');
-+const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
-+
-+// ==== OpenRouter (GPT-4o)
-+const openai = new OpenAI({
-+  apiKey: process.env.OPENROUTER_API_KEY,
-+  baseURL: 'https://openrouter.ai/api/v1',
-+  defaultHeaders: {
-+    'HTTP-Referer': process.env.DOMAIN || 'https://ai24solutions.ru',
-+    'X-Title': 'AI24SolutionsBot'
-+  }
-+});
-+
-+// ==== Google Sheets (через сервис-аккаунт)
-+async function getSheetsClient() {
-+  let keyFile = process.env.GOOGLE_APPLICATION_CREDENTIALS;
-+  let cleanup = null;
-+  if (process.env.GOOGLE_CREDENTIALS_BASE64 && !keyFile) {
+@@ -1,6 +1,7 @@
+ // server.js — AI24SolutionsBot (PULSE v1)
+ const express = require('express');
+ const bodyParser = require('body-parser');
++const fs = require('fs');
+ const cors = require('cors');
+ const dotenv = require('dotenv');
+ const path = require('path');
+@@ -38,7 +39,7 @@ async function getSheetsClient() {
+   let keyFile = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+   let cleanup = null;
+   if (process.env.GOOGLE_CREDENTIALS_BASE64 && !keyFile) {
+-    const buf = Buffer.from(process.env.GOOGLE_CREDENTIALS_BASE64, 'base64');
 +    const buf = Buffer.from(process.env.GOOGLE_CREDENTIALS_BASE64, 'base64');
-+    const tmp = path.join(__dirname, 'gsa.tmp.json');
-+    require('fs').writeFileSync(tmp, buf);
-+    keyFile = tmp;
-+    cleanup = () => { try { require('fs').unlinkSync(tmp); } catch {} };
-+  }
-+  const auth = new google.auth.GoogleAuth({
-+    keyFile,
-+    scopes: ['https://www.googleapis.com/auth/spreadsheets']
-+  });
-+  const authClient = await auth.getClient();
-+  const sheets = google.sheets({ version: 'v4', auth: authClient });
-+  return { sheets, cleanup };
-+}
-+const SPREADSHEET_ID = process.env.SPREADSHEET_ID || 'REPLACE_ME';
-+const SHEET_NAME = process.env.SHEET_NAME || 'Лист2';
+     const tmp = path.join(__dirname, 'gsa.tmp.json');
+-    require('fs').writeFileSync(tmp, buf);
++    fs.writeFileSync(tmp, buf);
+     keyFile = tmp;
+     cleanup = () => { try { require('fs').unlinkSync(tmp); } catch {} };
+   }
+@@ -55,6 +56,35 @@ const SHEET_NAME = process.env.SHEET_NAME || 'Лист2';
+ 
+ function typing(ctx, ms = 600) { ctx.sendChatAction('typing'); return new Promise(r => setTimeout(r, ms)); }
+ 
++// ===== Lead logger (admin + Google Sheets)
++async function logLead(ctx, { niche = '—', contact = '—', note = '' } = {}) {
++  const now = new Date().toLocaleString('ru-RU');
++  const tgId = ctx.from?.id || '';
++  const username = ctx.from?.username || '';
++  const first = ctx.from?.first_name || '';
++  const row = [now, niche, contact, tgId, username, first, note];
 +
-+// ==== UI
-+const mainMenu = Markup.keyboard([
-+  ['⚡ PULSE — увеличить продажи', '🤖 Задать AI-вопрос'],
-+  ['📩 Записаться на подключение']
-+]).resize();
-+
-+const nichesKB = Markup.keyboard([
-+  ['Эксперт / онлайн-курс', 'Салон / косметолог'],
-+  ['Фитнес / wellness', 'Психолог / терапевт'],
-+  ['Фриланс / digital-услуги', 'B2B сервисы'],
-+  ['E-commerce / товары', 'Другая ниша']
-+]).resize();
-+
-+function typing(ctx, ms = 600) { ctx.sendChatAction('typing'); return new Promise(r => setTimeout(r, ms)); }
-+
-+// ==== Scenes (PULSE funnel)
-+const pulseWizard = new Scenes.WizardScene(
-+  'pulse',
-+  async (ctx) => {
-+    await ctx.reply(
-+      'Я — Консультант AI24. Помогу внедрить AI-продавца PULSE, который общается с клиентами и мягко доводит до оплаты.\n\n' +
-+      'Чтобы подсказать точнее — выбери нишу:',
-+      nichesKB
-+    );
-+    return ctx.wizard.next();
-+  },
-+  async (ctx) => {
-+    ctx.wizard.state.niche = (ctx.message?.text || '').trim();
-+    const n = ctx.wizard.state.niche.toLowerCase();
-+    let pain = 'Клиенты пишут, но не доходят до оплаты; переписка отнимает время; сложно удерживать внимание.';
-+    if (n.includes('эксперт') || n.includes('курс')) pain = 'Ученики спрашивают в Direct и «думают», не доходя до оплаты — теряются.';
-+    else if (n.includes('салон') || n.includes('космет')) pain = 'До 70% клиентов не возвращаются после 1-го визита. Нет автоматического возврата/записи.';
-+    else if (n.includes('фитнес') || n.includes('wellness') || n.includes('фитн')) pain = 'Люди хотят начать «с понедельника», но откладывают и не приходят.';
-+    else if (n.includes('психолог') || n.includes('терап')) pain = 'Клиенты сомневаются и стесняются. Нужна эмпатичная коммуникация до первой записи.';
-+    else if (n.includes('фриланс') || n.includes('digital')) pain = 'Просят скидку и пропадают. Нужна защита ценности и доведение до оплаты.';
-+    else if (n.includes('b2b') || n.includes('сервис')) pain = 'Долгие согласования, нет движения к решению. Нужен язык выгоды для собственника.';
-+    else if (n.includes('ecom') || n.includes('товар') || n.includes('магаз')) pain = 'Брошенные корзины и «посмотрю потом». Нужен доводящий диалог.';
-+
-+    await typing(ctx);
-+    await ctx.reply(
-+      `Понимаю. В вашей сфере часто такое:\n• ${pain}\n\n` +
-+      'Это можно автоматизировать. PULSE отвечает 24/7, задаёт правильные вопросы, ' +
-+      'обрабатывает возражения и доводит до оплаты — как живой менеджер по продажам.'
-+    );
-+    await typing(ctx);
-+    await ctx.reply('Хочешь посмотреть, как PULSE будет работать с твоей аудиторией?',
-+      Markup.keyboard([['Да'], ['Интересно'], ['Назад в меню']]).resize()
-+    );
-+    return ctx.wizard.next();
-+  },
-+  async (ctx) => {
-+    const agree = (ctx.message?.text || '').toLowerCase();
-+    if (agree.includes('назад')) { await ctx.reply('Главное меню:', mainMenu); return ctx.scene.leave(); }
-+    await typing(ctx);
-+    await ctx.reply(
-+      'Супер. Подготовлю персональный план внедрения под твою нишу.\n' +
-+      'Оставь, пожалуйста, контакт, куда отправить результат:\n' +
-+      '• 📞 телефон (WhatsApp/Telegram)\n' +
-+      'или\n' +
-+      '• 🔗 @username'
-+    );
-+    return ctx.wizard.next();
-+  },
-+  async (ctx) => {
-+    const contact = (ctx.message?.text || '').trim();
-+    ctx.wizard.state.contact = contact;
-+    const niche = ctx.wizard.state.niche || '—';
-+    const now = new Date().toLocaleString('ru-RU');
-+    const row = [now, niche, contact, ctx.from?.id, ctx.from?.username || '', ctx.from?.first_name || ''];
-+
-+    if (process.env.ADMIN_ID) {
-+      try {
-+        await ctx.telegram.sendMessage(
-+          process.env.ADMIN_ID,
-+          `📩 Заявка PULSE\nНиша: ${niche}\nКонтакт: ${contact}\nTG: @${ctx.from?.username || '—'}\nID: ${ctx.from?.id}`
-+        );
-+      } catch (e) { console.error('Admin notify error:', e.message); }
-+    }
++  // Admin notify
++  if (process.env.ADMIN_ID) {
 +    try {
-+      const { sheets, cleanup } = await getSheetsClient();
-+      await sheets.spreadsheets.values.append({
-+        spreadsheetId: SPREADSHEET_ID,
-+        range: `${SHEET_NAME}!A1`,
-+        valueInputOption: 'USER_ENTERED',
-+        requestBody: { values: [row] }
-+      });
-+      if (cleanup) cleanup();
-+    } catch (e) { console.error('Sheets error:', e.message); }
-+
-+    await typing(ctx, 400);
-+    await ctx.reply(
-+      'Спасибо! Я зафиксировал данные.\n' +
-+      'Наш специалист AI24Solutions свяжется с тобой и пришлёт персональную схему внедрения PULSE.\n' +
-+      'Хочешь пока задать любой вопрос про AI?',
-+      Markup.keyboard([['🤖 Задать AI-вопрос'], ['Главное меню']]).resize()
-+    );
-+    return ctx.scene.leave();
++      await ctx.telegram.sendMessage(
++        process.env.ADMIN_ID,
++        `📩 Заявка PULSE\nНиша: ${niche}\nКонтакт: ${contact}\nTG: @${username || '—'}\nID: ${tgId}\n${note ? 'Примечание: ' + note : ''}`
++      );
++    } catch (e) { console.error('Admin notify error:', e.message); }
 +  }
-+);
 +
-+// ==== AI Q&A
-+async function answerAI(text) {
-+  const res = await openai.chat.completions.create({
-+    model: 'gpt-4o',
-+    max_tokens: 800,
-+    messages: [{ role: 'user', content: text }]
-+  });
-+  return res.choices[0]?.message?.content || 'Не удалось получить ответ.';
++  // Sheets
++  try {
++    const { sheets, cleanup } = await getSheetsClient();
++    await sheets.spreadsheets.values.append({
++      spreadsheetId: SPREADSHEET_ID,
++      range: `${SHEET_NAME}!A1`,
++      valueInputOption: 'USER_ENTERED',
++      requestBody: { values: [row] }
++    });
++    if (cleanup) cleanup();
++  } catch (e) { console.error('Sheets error:', e.message); }
 +}
 +
-+// ==== Stage
-+const stage = new Scenes.Stage([pulseWizard]);
-+bot.use(session());
-+bot.use(stage.middleware());
+ // ==== Scenes (PULSE funnel)
+ const pulseWizard = new Scenes.WizardScene(
+   'pulse',
+@@ -86,16 +116,15 @@ const pulseWizard = new Scenes.WizardScene(
+     await typing(ctx);
+     await ctx.reply('Хочешь посмотреть, как PULSE будет работать с твоей аудиторией?',
+       Markup.keyboard([['Да'], ['Интересно'], ['Назад в меню']]).resize()
+     );
+     return ctx.wizard.next();
+   },
+   async (ctx) => {
+-    const agree = (ctx.message?.text || '').toLowerCase();
+-    if (agree.includes('назад')) { await ctx.reply('Главное меню:', mainMenu); return ctx.scene.leave(); }
++    const agree = (ctx.message?.text || '').toLowerCase();
++    if (agree.includes('назад')) {
++      // Лид всё равно фиксируем (без контакта) и выходим в меню
++      await logLead(ctx, { niche: ctx.wizard.state.niche || '—', contact: `@${ctx.from?.username || '—'}`, note: '(back-to-menu at agree step)' });
++      await ctx.reply('Главное меню:', mainMenu); 
++      return ctx.scene.leave(); 
++    }
+     await typing(ctx);
+     await ctx.reply(
+       'Супер. Подготовлю персональный план внедрения под твою нишу.\n' +
+       'Оставь, пожалуйста, контакт, куда отправить результат:\n' +
+       '• 📞 телефон (WhatsApp/Telegram)\n' +
+       'или\n' +
+       '• 🔗 @username'
+     );
+     return ctx.wizard.next();
+   },
+   async (ctx) => {
+-    const contact = (ctx.message?.text || '').trim();
+-    ctx.wizard.state.contact = contact;
+-    const niche = ctx.wizard.state.niche || '—';
+-    const now = new Date().toLocaleString('ru-RU');
+-    const row = [now, niche, contact, ctx.from?.id, ctx.from?.username || '', ctx.from?.first_name || ''];
+-
+-    if (process.env.ADMIN_ID) {
+-      try {
+-        await ctx.telegram.sendMessage(
+-          process.env.ADMIN_ID,
+-          `📩 Заявка PULSE\nНиша: ${niche}\nКонтакт: ${contact}\nTG: @${ctx.from?.username || '—'}\nID: ${ctx.from?.id}`
+-        );
+-      } catch (e) { console.error('Admin notify error:', e.message); }
+-    }
+-    try {
+-      const { sheets, cleanup } = await getSheetsClient();
+-      await sheets.spreadsheets.values.append({
+-        spreadsheetId: SPREADSHEET_ID,
+-        range: `${SHEET_NAME}!A1`,
+-        valueInputOption: 'USER_ENTERED',
+-        requestBody: { values: [row] }
+-      });
+-      if (cleanup) cleanup();
+-    } catch (e) { console.error('Sheets error:', e.message); }
++    const txt = (ctx.message?.text || '').trim();
++    const niche = ctx.wizard.state.niche || '—';
 +
-+// ==== Handlers
-+bot.start((ctx) => {
-+  const name = ctx.from.first_name || 'друг';
-+  ctx.reply(
-+    `Привет, ${name}! Я — Консультант AI24 🤖\n` +
-+    `Помогу увеличить продажи через AI-продавца PULSE и отвечу на вопросы про внедрение AI.`,
-+    mainMenu
-+  );
-+});
-+bot.hears('⚡ PULSE — увеличить продажи', (ctx) => ctx.scene.enter('pulse'));
-+bot.hears('📩 Записаться на подключение', (ctx) => ctx.scene.enter('pulse'));
-+bot.hears('Главное меню', (ctx) => ctx.reply('Выбери действие:', mainMenu));
-+bot.command('demo', (ctx) => ctx.scene.enter('pulse'));
-+bot.command('reset', async (ctx) => {
-+  if (ctx.session?.__scenes) ctx.session.__scenes = null;
-+  await ctx.reply('Диалог сброшен. Что делаем дальше?', mainMenu);
-+});
++    // Если пользователь нажал "Назад в меню" на шаге контакта — тоже логируем лид
++    if (txt.toLowerCase().includes('назад')) {
++      await logLead(ctx, { niche, contact: `@${ctx.from?.username || '—'}`, note: '(back-to-menu at contact step)' });
++      await typing(ctx, 400);
++      await ctx.reply('Спасибо! Данные зафиксировал. Возвращаю в меню.', mainMenu);
++      return ctx.scene.leave();
++    }
++
++    ctx.wizard.state.contact = txt;
++    await logLead(ctx, { niche, contact: txt, note: '(lead with contact)' });
+ 
+     await typing(ctx, 400);
+     await ctx.reply(
+       'Спасибо! Я зафиксировал данные.\n' +
+       'Наш специалист AI24Solutions свяжется с тобой и пришлёт персональную схему внедрения PULSE.\n' +
+       'Хочешь пока задать любой вопрос про AI?',
+       Markup.keyboard([['🤖 Задать AI-вопрос'], ['Главное меню']]).resize()
+     );
+     return ctx.scene.leave();
+   }
+ );
+ 
+ // ==== AI Q&A
+ async function answerAI(text) {
+   const res = await openai.chat.completions.create({
+     model: 'gpt-4o',
+     max_tokens: 800,
+     messages: [{ role: 'user', content: text }]
+   });
+   return res.choices[0]?.message?.content || 'Не удалось получить ответ.';
+ }
+ 
+ // ==== Stage
+ const stage = new Scenes.Stage([pulseWizard]);
+ bot.use(session());
+ bot.use(stage.middleware());
+ 
+ // ==== Handlers
+ bot.start((ctx) => {
+   const name = ctx.from.first_name || 'друг';
+   ctx.reply(
+     `Привет, ${name}! Я — Консультант AI24 🤖\n` +
+     `Помогу увеличить продажи через AI-продавца PULSE и отвечу на вопросы про внедрение AI.`,
+     mainMenu
+   );
+ });
+ bot.hears('⚡ PULSE — увеличить продажи', (ctx) => ctx.scene.enter('pulse'));
+ bot.hears('📩 Записаться на подключение', (ctx) => ctx.scene.enter('pulse'));
+ bot.hears('Главное меню', (ctx) => ctx.reply('Выбери действие:', mainMenu));
+ bot.command('demo', (ctx) => ctx.scene.enter('pulse'));
+ bot.command('reset', async (ctx) => {
+   if (ctx.session?.__scenes) ctx.session.__scenes = null;
+   await ctx.reply('Диалог сброшен. Что делаем дальше?', mainMenu);
+ });
+-bot.hears('🤖 Задать AI-вопрос', async (ctx) => {
+-  await ctx.reply('Сформулируй вопрос про AI/внедрение — отвечу как эксперт.');
+-});
 +bot.hears('🤖 Задать AI-вопрос', async (ctx) => {
++  ctx.session.awaitAI = true; // ждать следующий текст как вопрос к AI
 +  await ctx.reply('Сформулируй вопрос про AI/внедрение — отвечу как эксперт.');
 +});
-+bot.on('text', async (ctx, next) => {
-+  const text = (ctx.message?.text || '').trim();
-+  const known = [
-+    '⚡ PULSE — увеличить продажи','🤖 Задать AI-вопрос','📩 Записаться на подключение',
-+    'Эксперт / онлайн-курс','Салон / косметолог','Фитнес / wellness','Психолог / терапевт',
-+    'Фриланс / digital-услуги','B2B сервисы','E-commerce / товары','Другая ниша',
-+    'Да','Интересно','Назад в меню','Главное меню'
-+  ];
-+  if (!known.includes(text) && !ctx.session?.__scenes) {
-+    try { await typing(ctx); return ctx.reply(await answerAI(text), mainMenu); }
-+    catch (e) { console.error('AI error:', e.message); return ctx.reply('⚠️ Ошибка при обращении к модели. Попробуй ещё раз.', mainMenu); }
+ bot.on('text', async (ctx, next) => {
+   const text = (ctx.message?.text || '').trim();
+   const known = [
+     '⚡ PULSE — увеличить продажи','🤖 Задать AI-вопрос','📩 Записаться на подключение',
+     'Эксперт / онлайн-курс','Салон / косметолог','Фитнес / wellness','Психолог / терапевт',
+     'Фриланс / digital-услуги','B2B сервисы','E-commerce / товары','Другая ниша',
+     'Да','Интересно','Назад в меню','Главное меню'
+   ];
+-  if (!known.includes(text) && !ctx.session?.__scenes) {
+-    try { await typing(ctx); return ctx.reply(await answerAI(text), mainMenu); }
+-    catch (e) { console.error('AI error:', e.message); return ctx.reply('⚠️ Ошибка при обращении к модели. Попробуй ещё раз.', mainMenu); }
+-  }
+-  return next();
++
++  // 1) Явно ждём вопрос к AI после нажатия кнопки
++  if (ctx.session?.awaitAI) {
++    ctx.session.awaitAI = false;
++    try {
++      await typing(ctx);
++      const ans = await answerAI(text);
++      return ctx.reply(ans, mainMenu);
++    } catch (e) {
++      console.error('AI error:', e.message);
++      return ctx.reply('⚠️ Ошибка при обращении к модели. Попробуй ещё раз.', mainMenu);
++    }
 +  }
++
++  // 2) Если пользователь не в сцене и текст не из известных кнопок — считаем это вопросом к AI (фоллбек)
++  const inScene = !!(ctx.scene && ctx.scene.current);
++  if (!known.includes(text) && !inScene) {
++    try {
++      await typing(ctx);
++      const ans = await answerAI(text);
++      return ctx.reply(ans, mainMenu);
++    } catch (e) {
++      console.error('AI error:', e.message);
++      return ctx.reply('⚠️ Ошибка при обращении к модели. Попробуй ещё раз.', mainMenu);
++    }
++  }
++
 +  return next();
-+});
-+
-+// ==== Webhook
-+app.use(bot.webhookCallback('/telegram'));
-+bot.telegram.setWebhook(`${process.env.DOMAIN}/telegram`)
-+  .then(() => console.log('📡 Webhook установлен'))
-+  .catch(console.error);
-+
-+// ==== Server
-+app.get('/', (_, res) => res.send('✅ AI24Solutions Bot online'));
-+const PORT = process.env.PORT || 3000;
-+app.listen(PORT, () => console.log(`🚀 Server on ${PORT}`));
-diff --git a/.env.example b/.env.example
-new file mode 100644
-index 0000000..c4f8a1d
---- /dev/null
-+++ b/.env.example
-@@ -0,0 +1,16 @@
-+TELEGRAM_BOT_TOKEN=xxx
-+OPENROUTER_API_KEY=xxx
-+DOMAIN=https://your-domain.example
-+
-+ADMIN_ID=123456789
-+SPREADSHEET_ID=1CajOn3ncsj8h21uxAk10XQWJTD40R6195oJKGSQPJaQ
-+SHEET_NAME=Лист2
-+
-+# Вариант A (рекомендуется): хранить JSON сервис-аккаунта в base64
-+GOOGLE_CREDENTIALS_BASE64=PASTE_BASE64_HERE
-+
-+# Вариант B: путь к файлу вне репозитория
-+# GOOGLE_APPLICATION_CREDENTIALS=/app/secure/gsa.json
-diff --git a/credentials.json b/credentials.json
-deleted file mode 100644
-index 9a9b111..0000000
---- a/credentials.json
-+++ /dev/null
-@@ -1,48 +0,0 @@
--{REMOVED: move secrets to GOOGLE_CREDENTIALS_BASE64 or GOOGLE_APPLICATION_CREDENTIALS}
-diff --git a/credentials.sample.json b/credentials.sample.json
-new file mode 100644
-index 0000000..7b9d9f1
---- /dev/null
-+++ b/credentials.sample.json
-@@ -0,0 +1,18 @@
-+{
-+  "type": "service_account",
-+  "project_id": "YOUR_PROJECT_ID",
-+  "private_key_id": "REDACTED",
-+  "private_key": "REDACTED",
-+  "client_email": "sheet-writer@YOUR_PROJECT_ID.iam.gserviceaccount.com",
-+  "client_id": "REDACTED",
-+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-+  "token_uri": "https://oauth2.googleapis.com/token",
-+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/sheet-writer%40YOUR_PROJECT_ID.iam.gserviceaccount.com"
-+}
-diff --git a/README.md b/README.md
-index 4c6c1ab..7a9f3f2 100644
---- a/README.md
-+++ b/README.md
-@@ -1 +1,37 @@
--AI24solutions
-+# AI24Solutions — PULSE Assistant
-+
-+Телеграм-бот и web-ассистент для продажи через AI (воронка PULSE + AI Q&A).
-+
-+## Быстрый старт
-+```bash
-+npm i
-+cp .env.example .env    # заполните переменные
-+npm run dev             # локально
-+```
-+
-+## Переменные окружения
-+См. `.env.example`. Рекомендуется хранить JSON сервис-аккаунта **в base64**:
-+```
-+GOOGLE_CREDENTIALS_BASE64=PASTE_BASE64_HERE
-+```
-+или укажите путь к файлу вне репозитория:
-+```
-+GOOGLE_APPLICATION_CREDENTIALS=/app/secure/gsa.json
-+```
-+
-+## Безопасность
-+- `credentials.json` удалён из репозитория. Никогда не коммитьте секреты.
-+- Удалите ранее скомпрометированный ключ в Google Cloud → Service Accounts → Keys.
-+
-+## Деплой
-+1) Установить переменные окружения на хостинге (Railway/Render/VPS).
-+2) Настроить вебхук Telegram: переменная `DOMAIN` должна быть публичной.
-+3) Дать доступ Google Sheet сервис-аккаунту (роль Editor).
-+
-+## Команды
-+- `/start` — приветствие и меню
-+- `/demo` — запуск воронки PULSE
-+- `/reset` — сброс сцены
-+
-+## Лицензия
-+MIT
+ });
+ 
+ // ==== Webhook
+ app.use(bot.webhookCallback('/telegram'));
+ bot.telegram.setWebhook(`${process.env.DOMAIN}/telegram`)
+   .then(() => console.log('📡 Webhook установлен'))
+   .catch(console.error);
+>
